@@ -1,6 +1,11 @@
 # Configure Rails Environment
 ENV["RAILS_ENV"] = "test"
 
+# Dummy provider keys so RubyLLM's provider resolution succeeds when a Chat record
+# is created. No real request is ever made — FakeChat intercepts every #ask.
+ENV["OPENAI_API_KEY"]    ||= "test-openai-key"
+ENV["ANTHROPIC_API_KEY"] ||= "test-anthropic-key"
+
 require_relative "../test/dummy/config/environment"
 # The dummy app owns the test schema: engine migrations are copied into it via
 # `bin/rails concierge:install:migrations` (exactly as a real host does), so we

@@ -10,12 +10,22 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_07_19_131803) do
+ActiveRecord::Schema[8.1].define(version: 2026_07_19_132103) do
   create_table "chats", force: :cascade do |t|
     t.datetime "created_at", null: false
     t.integer "model_id"
     t.datetime "updated_at", null: false
     t.index ["model_id"], name: "index_chats_on_model_id"
+  end
+
+  create_table "concierge_conversations", force: :cascade do |t|
+    t.integer "chat_id", null: false
+    t.datetime "created_at", null: false
+    t.string "grain", default: "account", null: false
+    t.string "subject_id", null: false
+    t.string "subject_type", null: false
+    t.datetime "updated_at", null: false
+    t.index ["subject_type", "subject_id"], name: "index_concierge_conversations_on_subject", unique: true
   end
 
   create_table "concierge_memories", force: :cascade do |t|

@@ -13,6 +13,9 @@ require "concierge/capability/mcp_adapter"
 require "concierge/tools/memory_tool"
 require "concierge/tools/set_outreach_preference_tool"
 require "concierge/tools/routine_tool"
+require "concierge/result"
+require "concierge/chat_resolver"
+require "concierge/run"
 require "concierge/engine"
 
 # Concierge — a per-account AI customer success manager for Rails, built on RubyLLM.
