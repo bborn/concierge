@@ -47,8 +47,9 @@ class SnapshotTest < ActiveSupport::TestCase
     assert_match(/<error: kaboom>/, h[:boom])
   end
 
-  test "an unset persona is surfaced explicitly, not silently defaulted" do
+  test "an unset persona falls back to a neutral default voice" do
     playbook = Concierge::Playbook.new
-    assert_raises(Concierge::PersonaNotConfigured) { playbook.persona! }
+    refute playbook.persona_configured?
+    assert_equal Concierge::Playbook::DEFAULT_PERSONA.voice, playbook.persona.voice
   end
 end

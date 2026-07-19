@@ -40,9 +40,6 @@ module Concierge
   # Base error class for everything the gem raises on purpose.
   class Error < StandardError; end
 
-  # Raised when a run needs a persona the host never configured (see Playbook).
-  class PersonaNotConfigured < Error; end
-
   class << self
     # Yields the singleton Configuration so the host can set it up:
     #

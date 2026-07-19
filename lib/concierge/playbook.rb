@@ -14,6 +14,13 @@ module Concierge
   class Playbook
     Persona = Struct.new(:name, :avatar, :voice, keyword_init: true)
 
+    # A neutral default so the agent has a usable voice out of the box. Hosts
+    # override it by declaring their own persona. No name — the run falls back to
+    # a generic "customer success manager" role until the host names its agent.
+    DEFAULT_PERSONA = Persona.new(
+      name: nil, avatar: nil, voice: "warm, concise, and helpful, never pushy"
+    ).freeze
+
     def initialize
       @engagement_signals = {}
       @segments           = {}
@@ -55,18 +62,16 @@ module Concierge
       @engagement_signals
     end
 
-    # The agent's identity. There is deliberately NO default persona — the host
-    # must name its own agent (design §0.6). Returns the persona, or nil.
+    # The agent's identity. Called with arguments, it sets the persona; called
+    # bare, it returns the configured persona or the neutral DEFAULT_PERSONA.
     def persona(name: nil, avatar: nil, voice: nil)
       @persona = Persona.new(name: name, avatar: avatar, voice: voice) if name || avatar || voice
-      @persona
+      @persona || DEFAULT_PERSONA
     end
 
-    # Like #persona but raises when the host never configured one, so a run fails
-    # loudly rather than inventing a character.
-    def persona!
-      @persona || raise(Concierge::PersonaNotConfigured,
-                        "no persona configured; set config.playbook { persona name:, voice: }")
+    # True only when the host declared its own persona (not the default).
+    def persona_configured?
+      !@persona.nil?
     end
   end
 end

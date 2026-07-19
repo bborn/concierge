@@ -10,18 +10,20 @@ class PlaybookTest < ActiveSupport::TestCase
   end
 
   test "persona returns the configured persona" do
-    persona = Concierge.config.playbook.persona!
+    persona = Concierge.config.playbook.persona
 
     assert_equal "Kit", persona.name
     assert_equal "warm, concise, never pushy", persona.voice
+    assert Concierge.config.playbook.persona_configured?
   end
 
-  test "persona! raises when the host configured none" do
+  test "an unset persona falls back to the neutral default voice" do
     playbook = Concierge::Playbook.new
     playbook.product_brief "no persona here"
 
-    assert_nil playbook.persona
-    assert_raises(Concierge::PersonaNotConfigured) { playbook.persona! }
+    refute playbook.persona_configured?
+    assert_nil playbook.persona.name
+    assert_equal Concierge::Playbook::DEFAULT_PERSONA.voice, playbook.persona.voice
   end
 
   test "engagement signals preserve registration order" do
