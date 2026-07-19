@@ -25,7 +25,6 @@ module Concierge
     attr_accessor :chat_factory
 
     # Boundaries filled in by later phases. Nil until the host configures them.
-    attr_accessor :account       # AccountAdapter          (Phase 1)
     attr_accessor :playbook      # Playbook                (Phase 2)
     attr_accessor :capabilities  # Capability::Registry    (Phase 4)
     attr_accessor :channels      # Channel registry        (Phase 6)
@@ -35,6 +34,21 @@ module Concierge
       @chat_model_name  = "Chat"
       @draft_and_review = false
       @chat_factory     = DEFAULT_CHAT_FACTORY
+    end
+
+    # Declare what an account is. With a block, builds and stores the adapter;
+    # without one, returns the configured adapter (or nil).
+    #
+    #   config.account do
+    #     subject_class Tenant
+    #     attribute(:plan) { |t| t.plan }
+    #   end
+    def account(&block)
+      if block
+        @account = AccountAdapter.new
+        @account.instance_eval(&block)
+      end
+      @account
     end
 
     # Default chat factory: prefer resuming the persisted conversation (RubyLLM's

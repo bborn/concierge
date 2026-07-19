@@ -7,6 +7,7 @@ ActiveRecord::Migrator.migrations_paths << File.expand_path("../db/migrate", __d
 require "rails/test_help"
 
 require_relative "support/fake_chat"
+require_relative "support/dummy_config"
 
 # Load fixtures from the engine
 if ActiveSupport::TestCase.respond_to?(:fixture_paths=)
@@ -22,6 +23,6 @@ class ActiveSupport::TestCase
   setup do
     Concierge.reset_config!
     Concierge::Test::FakeChat.reset!
-    Concierge.config.chat_factory = ->(model:, chat_record: nil) { Concierge::Test::FakeChat.current }
+    Concierge::Test.configure!
   end
 end
