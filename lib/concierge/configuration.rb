@@ -25,7 +25,6 @@ module Concierge
     attr_accessor :chat_factory
 
     # Boundaries filled in by later phases. Nil until the host configures them.
-    attr_accessor :playbook      # Playbook                (Phase 2)
     attr_accessor :capabilities  # Capability::Registry    (Phase 4)
     attr_accessor :channels      # Channel registry        (Phase 6)
     attr_accessor :governance    # Governance settings     (Phase 6)
@@ -49,6 +48,16 @@ module Concierge
         @account.instance_eval(&block)
       end
       @account
+    end
+
+    # Declare what the app does and what "engaged" means. With a block, builds
+    # and stores the Playbook; without one, returns it (or nil).
+    def playbook(&block)
+      if block
+        @playbook = Playbook.new
+        @playbook.instance_eval(&block)
+      end
+      @playbook
     end
 
     # Default chat factory: prefer resuming the persisted conversation (RubyLLM's

@@ -1,0 +1,72 @@
+module Concierge
+  # Static host knowledge the agent needs: what the product is, what "engaged"
+  # means, and who the agent is. Configured through a block DSL:
+  #
+  #   config.playbook do
+  #     product_brief "Acme helps teams ship changelogs."
+  #     goals "Get each account to publish their first changelog."
+  #     account_types :brand, :creator
+  #     engagement_signal(:has_paid_plan) { |s| s[:plan] != "free" }
+  #     persona name: "Kit", voice: "warm, concise, never pushy"
+  #   end
+  #
+  # As with AccountAdapter, each setter doubles as a reader when called bare.
+  class Playbook
+    Persona = Struct.new(:name, :avatar, :voice, keyword_init: true)
+
+    def initialize
+      @engagement_signals = {}
+      @segments           = {}
+      @account_types      = []
+    end
+
+    def product_brief(text = nil)
+      @product_brief = text if text
+      @product_brief
+    end
+
+    def goals(text = nil)
+      @goals = text if text
+      @goals
+    end
+
+    def account_types(*names)
+      @account_types.concat(names.flatten.map(&:to_sym)) if names.any?
+      @account_types
+    end
+
+    # A named segment predicate over a Subject (e.g. high-value, at-risk).
+    def segment(name, &block)
+      @segments[name.to_sym] = block
+    end
+
+    def segments
+      @segments
+    end
+
+    # A named engagement signal — a lambda over a Subject whose value feeds the
+    # account-state Snapshot. Registration order is preserved and drives the
+    # Snapshot's (deterministic) order.
+    def engagement_signal(name, &block)
+      @engagement_signals[name.to_sym] = block
+    end
+
+    def engagement_signals
+      @engagement_signals
+    end
+
+    # The agent's identity. There is deliberately NO default persona — the host
+    # must name its own agent (design §0.6). Returns the persona, or nil.
+    def persona(name: nil, avatar: nil, voice: nil)
+      @persona = Persona.new(name: name, avatar: avatar, voice: voice) if name || avatar || voice
+      @persona
+    end
+
+    # Like #persona but raises when the host never configured one, so a run fails
+    # loudly rather than inventing a character.
+    def persona!
+      @persona || raise(Concierge::PersonaNotConfigured,
+                        "no persona configured; set config.playbook { persona name:, voice: }")
+    end
+  end
+end

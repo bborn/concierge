@@ -16,6 +16,21 @@ module Concierge
           attribute(:plan) { |t| t.plan }
           scope(:users)    { |t| t.users }
         end
+
+        c.playbook do
+          product_brief "Acme helps teams publish changelogs."
+          goals "Get each account to publish their first changelog and upgrade."
+          account_types :brand, :creator
+
+          engagement_signal(:has_paid_plan) { |s| %w[pro enterprise].include?(s[:plan]) }
+          engagement_signal(:user_count)    { |s| s.scope_for(:users).count }
+          engagement_signal(:days_since_active) do |s|
+            last = s.to_model.last_active_at
+            last ? ((Time.current - last) / 1.day).floor : nil
+          end
+
+          persona name: "Kit", voice: "warm, concise, never pushy"
+        end
       end
     end
   end
