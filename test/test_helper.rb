@@ -32,5 +32,6 @@ class ActiveSupport::TestCase
     Concierge.reset_config!
     Concierge::Test::FakeChat.reset!
     Concierge::Test.configure!
+    Concierge::InAppInbox.reset!
   end
 end

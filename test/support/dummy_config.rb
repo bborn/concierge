@@ -39,6 +39,29 @@ module Concierge
           register Concierge::Tools::SetOutreachPreferenceTool, access: :write
           register Concierge::Tools::RoutineTool,             access: :write
         end
+
+        c.channels           = [ Concierge::Channel::InApp, Concierge::Channel::Email ]
+        c.email_address_for  = ->(subject) { subject.to_model.users.first&.email }
+        c.in_app_broadcaster = ->(subject, payload) { InAppInbox.record(subject, payload) }
+        c.mailer_host        = "example.test"
+      end
+    end
+  end
+
+  # A tiny in-memory sink standing in for a real Turbo broadcast, so tests can
+  # assert the in-app channel actively surfaced a message.
+  class InAppInbox
+    class << self
+      def record(subject, payload)
+        messages << { subject_id: subject.id, body: payload[:body] }
+      end
+
+      def messages
+        @messages ||= []
+      end
+
+      def reset!
+        @messages = []
       end
     end
   end

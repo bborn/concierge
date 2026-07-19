@@ -16,6 +16,12 @@ require "concierge/tools/routine_tool"
 require "concierge/result"
 require "concierge/chat_resolver"
 require "concierge/run"
+require "concierge/channel/base"
+require "concierge/channel/in_app"
+require "concierge/channel/email"
+require "concierge/channel/router"
+require "concierge/governance"
+require "concierge/outreach"
 require "concierge/engine"
 
 # Concierge — a per-account AI customer success manager for Rails, built on RubyLLM.
@@ -53,6 +59,12 @@ module Concierge
     # this in setup so each example starts from a clean slate.
     def reset_config!
       @config = nil
+    end
+
+    # Where the gem logs. Host-overridable via config.logger; falls back to the
+    # Rails logger when mounted.
+    def logger
+      config.logger || (defined?(Rails) ? Rails.logger : nil)
     end
   end
 end

@@ -12,6 +12,9 @@ module Concierge
     # +Chat+ table rather than owning conversations itself.
     attr_accessor :chat_model_name
 
+    # Optional logger override. Defaults to the Rails logger via Concierge.logger.
+    attr_accessor :logger
+
     # When true, autonomous sends are diverted to an outbox for human review
     # instead of being delivered. Off by default — Concierge is autonomous within
     # its caps (see the ChannelBridge governance layer).
@@ -24,9 +27,23 @@ module Concierge
     #   ->(model:, chat_record:) { ... returns something that responds to #ask }
     attr_accessor :chat_factory
 
-    # Boundaries filled in by later phases. Nil until the host configures them.
-    attr_accessor :channels      # Channel registry        (Phase 6)
-    attr_accessor :governance    # Governance settings     (Phase 6)
+    # --- ChannelBridge (Phase 6) ---
+
+    # Ordered list of channel classes the router considers, most-preferred first.
+    attr_accessor :channels
+
+    # Callable(subject) -> email address, so the gem stays schema-agnostic.
+    attr_accessor :email_address_for
+
+    # Callable(subject, payload) that surfaces an in-app message (Turbo broadcast).
+    attr_accessor :in_app_broadcaster
+
+    # Host used to build absolute unsubscribe URLs in emails.
+    attr_accessor :mailer_host
+
+    # Optional overrides: frequency-cap windows and the usefulness bar.
+    attr_accessor :frequency_windows
+    attr_accessor :usefulness_check
 
     def initialize
       @chat_model_name  = "Chat"

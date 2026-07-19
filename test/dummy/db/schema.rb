@@ -10,12 +10,26 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_07_19_132103) do
+ActiveRecord::Schema[8.1].define(version: 2026_07_19_132739) do
   create_table "chats", force: :cascade do |t|
     t.datetime "created_at", null: false
     t.integer "model_id"
     t.datetime "updated_at", null: false
     t.index ["model_id"], name: "index_chats_on_model_id"
+  end
+
+  create_table "concierge_channel_deliveries", force: :cascade do |t|
+    t.string "channel", null: false
+    t.datetime "created_at", null: false
+    t.string "kind", default: "outreach", null: false
+    t.string "payload_digest"
+    t.datetime "sent_at", null: false
+    t.string "subject_id", null: false
+    t.string "subject_type", null: false
+    t.string "unsubscribe_token"
+    t.datetime "updated_at", null: false
+    t.index ["subject_type", "subject_id", "sent_at"], name: "index_concierge_deliveries_on_subject_and_sent_at"
+    t.index ["unsubscribe_token"], name: "index_concierge_deliveries_on_unsubscribe_token", unique: true
   end
 
   create_table "concierge_conversations", force: :cascade do |t|
@@ -46,6 +60,9 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_19_132103) do
   create_table "concierge_outreach_preferences", force: :cascade do |t|
     t.datetime "created_at", null: false
     t.string "frequency", default: "normal", null: false
+    t.boolean "opted_out", default: false, null: false
+    t.integer "quiet_hours_end"
+    t.integer "quiet_hours_start"
     t.string "subject_id", null: false
     t.string "subject_type", null: false
     t.datetime "updated_at", null: false
