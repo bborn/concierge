@@ -25,7 +25,6 @@ module Concierge
     attr_accessor :chat_factory
 
     # Boundaries filled in by later phases. Nil until the host configures them.
-    attr_accessor :capabilities  # Capability::Registry    (Phase 4)
     attr_accessor :channels      # Channel registry        (Phase 6)
     attr_accessor :governance    # Governance settings     (Phase 6)
 
@@ -58,6 +57,15 @@ module Concierge
         @playbook.instance_eval(&block)
       end
       @playbook
+    end
+
+    # Declare which tools the agent may use. The block runs against a fresh
+    # Capability::Registry; without a block, returns the registry (built lazily
+    # so hosts can register incrementally).
+    def capabilities(&block)
+      @capabilities ||= Capability::Registry.new
+      @capabilities.instance_eval(&block) if block
+      @capabilities
     end
 
     # Default chat factory: prefer resuming the persisted conversation (RubyLLM's

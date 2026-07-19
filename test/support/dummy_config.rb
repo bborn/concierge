@@ -31,6 +31,14 @@ module Concierge
 
           persona name: "Kit", voice: "warm, concise, never pushy"
         end
+
+        c.capabilities do
+          register Concierge::Tools::RecallTool,                access: :read
+          register Concierge::Tools::RememberTool,             access: :write
+          register Concierge::Tools::ForgetTool,              access: :write
+          register Concierge::Tools::SetOutreachPreferenceTool, access: :write
+          register Concierge::Tools::RoutineTool,             access: :write
+        end
       end
     end
   end

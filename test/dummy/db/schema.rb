@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_07_19_131339) do
+ActiveRecord::Schema[8.1].define(version: 2026_07_19_131803) do
   create_table "chats", force: :cascade do |t|
     t.datetime "created_at", null: false
     t.integer "model_id"
@@ -31,6 +31,15 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_19_131339) do
     t.datetime "updated_at", null: false
     t.index ["subject_type", "subject_id", "active", "category"], name: "index_concierge_memories_on_subject_active_category"
     t.index ["subject_type", "subject_id", "updated_at"], name: "index_concierge_memories_on_subject_recency"
+  end
+
+  create_table "concierge_outreach_preferences", force: :cascade do |t|
+    t.datetime "created_at", null: false
+    t.string "frequency", default: "normal", null: false
+    t.string "subject_id", null: false
+    t.string "subject_type", null: false
+    t.datetime "updated_at", null: false
+    t.index ["subject_type", "subject_id"], name: "index_concierge_outreach_prefs_on_subject", unique: true
   end
 
   create_table "messages", force: :cascade do |t|

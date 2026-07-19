@@ -1,0 +1,55 @@
+module Concierge
+  module Tools
+    # Save a durable note about the current account. Write-access.
+    class RememberTool < Concierge::Capability::NativeTool
+      description "Save a durable note about this account so you remember it in future conversations."
+      param :body, desc: "The fact or note to remember."
+      param :category, desc: "Optional label, e.g. 'preference' or 'billing'.", required: false
+
+      def name
+        "remember"
+      end
+
+      def execute(body:, category: nil)
+        context_store.remember(subject, body: body, category: category, source: :agent)
+        { ok: true }
+      rescue => e
+        { error: e.message }
+      end
+    end
+
+    # Look up what's known about the current account. Read-access.
+    class RecallTool < Concierge::Capability::NativeTool
+      description "Look up durable notes about this account by keyword or category."
+      param :query, desc: "Keyword to search note bodies for.", required: false
+      param :category, desc: "Restrict to a category.", required: false
+
+      def name
+        "recall"
+      end
+
+      def execute(query: nil, category: nil)
+        context_store.recall(subject, query: query, category: category).map(&:body)
+      rescue => e
+        { error: e.message }
+      end
+    end
+
+    # Retire a note that's no longer true. Write-access (soft-delete only).
+    class ForgetTool < Concierge::Capability::NativeTool
+      description "Retire a durable note that is no longer accurate."
+      param :id, desc: "The id of the note to forget."
+
+      def name
+        "forget"
+      end
+
+      def execute(id:)
+        row = context_store.forget(subject, id)
+        row ? { ok: true } : { error: "no note ##{id} for this account" }
+      rescue => e
+        { error: e.message }
+      end
+    end
+  end
+end
