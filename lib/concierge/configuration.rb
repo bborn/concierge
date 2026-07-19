@@ -60,6 +60,12 @@ module Concierge
     attr_accessor :weekly_review_enabled
     attr_accessor :weekly_review_instruction
 
+    # --- Admin surface (Phase 9) ---
+
+    # Callable(controller) -> truthy to permit admin access. Nil = deny (the admin
+    # fails closed rather than shipping an open dashboard).
+    attr_accessor :authenticate_admin
+
     def initialize
       @chat_model_name  = "Chat"
       @draft_and_review = false

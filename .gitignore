@@ -10,5 +10,8 @@ Gemfile.lock
 /test/dummy/db/*.sqlite3
 /test/dummy/db/*.sqlite3-*
 
+# Generator test output (engine-root tmp)
+/tmp/
+
 # Editor / OS
 .DS_Store
