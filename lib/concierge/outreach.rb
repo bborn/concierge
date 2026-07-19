@@ -22,6 +22,9 @@ module Concierge
       return :suppressed unless @governance.usefulness_ok?(payload)
       return :suppressed unless @governance.allow?(@subject, kind: @kind)
 
+      # Optional human-gated mode: draft to the outbox instead of auto-sending.
+      return draft_to_outbox(payload) if Concierge.config.draft_and_review
+
       channel = Channel::Router.new.pick(@subject, preferred: @preferred)
       return :no_channel unless channel
 
@@ -39,6 +42,18 @@ module Concierge
     end
 
     private
+
+    def draft_to_outbox(payload)
+      OutboxItem.create!(
+        subject_type: @subject.grain.to_s,
+        subject_id:   @subject.id.to_s,
+        body:         payload[:body],
+        channel:      @preferred&.to_s,
+        kind:         @kind,
+        state:        "pending"
+      )
+      :drafted
+    end
 
     def build_payload
       { body: @result.respond_to?(:reply_text) ? @result.reply_text : @result.to_s, kind: @kind }

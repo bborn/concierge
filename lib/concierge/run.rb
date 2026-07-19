@@ -27,6 +27,12 @@ module Concierge
     end
 
     def call
+      # Control is takeover, not gating: while a human holds the thread, suppress
+      # autonomous proactive sends (design §0.8). Reactive turns still answer.
+      if @trigger[:type] == :proactive && Handoff.active_for(@subject)&.active?
+        return Result.suppressed(reason: "human has taken over this thread")
+      end
+
       chat_record = ChatResolver.call(@subject, model: model)
       chat = build_chat(chat_record)
       chat.with_instructions(system_prompt)
