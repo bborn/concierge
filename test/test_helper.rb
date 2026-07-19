@@ -2,8 +2,11 @@
 ENV["RAILS_ENV"] = "test"
 
 require_relative "../test/dummy/config/environment"
+# The dummy app owns the test schema: engine migrations are copied into it via
+# `bin/rails concierge:install:migrations` (exactly as a real host does), so we
+# point only at the dummy's migrate path — pointing at the engine's too would
+# double-load every Concierge migration (DuplicateMigrationNameError).
 ActiveRecord::Migrator.migrations_paths = [ File.expand_path("../test/dummy/db/migrate", __dir__) ]
-ActiveRecord::Migrator.migrations_paths << File.expand_path("../db/migrate", __dir__)
 require "rails/test_help"
 
 require_relative "support/fake_chat"
