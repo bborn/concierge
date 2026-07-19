@@ -44,6 +44,10 @@ module Concierge
         c.email_address_for  = ->(subject) { subject.to_model.users.first&.email }
         c.in_app_broadcaster = ->(subject, payload) { InAppInbox.record(subject, payload) }
         c.mailer_host        = "example.test"
+
+        c.weekly_review_enabled     = true
+        c.weekly_review_instruction = "Review this account and reach out if something is worth their attention."
+        c.priority = ->(subject) { subject[:plan] == "enterprise" ? 100 : 1 }
       end
     end
   end

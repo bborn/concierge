@@ -57,10 +57,12 @@ module Concierge
         assert result[:error]
       end
 
-      test "routine tool is a registered but inert seam until Phase 7" do
-        assert_raises(NotImplementedError) do
-          RoutineTool.new(subject: @subject).execute(action: "create")
-        end
+      test "routine tool creates an account-scoped routine (Phase 7)" do
+        result = RoutineTool.new(subject: @subject).execute(
+          action: "create", schedule: "0 9 * * 1", instruction: "weekly report"
+        )
+        assert result[:ok]
+        assert_equal 1, Concierge::Routine.for_subject(@subject).count
       end
     end
   end

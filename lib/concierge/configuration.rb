@@ -45,6 +45,21 @@ module Concierge
     attr_accessor :frequency_windows
     attr_accessor :usefulness_check
 
+    # --- Routines + proactive runtime (Phase 7) ---
+
+    # Token budgets for proactive work: { per_tenant:, global: }. Nil = unlimited.
+    attr_accessor :budget
+
+    # Callable(subject) -> per-account token cap override (global rail still binds).
+    attr_accessor :budget_override_for
+
+    # Callable(subject) -> numeric priority score (higher spends budget first).
+    attr_accessor :priority
+
+    # The v1 built-in weekly review: whether it runs, and its framing instruction.
+    attr_accessor :weekly_review_enabled
+    attr_accessor :weekly_review_instruction
+
     def initialize
       @chat_model_name  = "Chat"
       @draft_and_review = false

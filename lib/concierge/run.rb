@@ -12,6 +12,14 @@ module Concierge
       new(subject, trigger: { type: :reactive, message: message }).call
     end
 
+    # Proactive turn framed by a trigger (a routine or lifecycle event). The
+    # instruction shapes what the agent reaches out about; there is no inbound
+    # customer message.
+    def self.proactive(subject, instruction:)
+      new(subject, trigger: { type: :proactive, instruction: instruction,
+                              message: instruction }).call
+    end
+
     def initialize(subject, trigger:)
       @subject = subject
       @trigger = trigger

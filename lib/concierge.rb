@@ -22,6 +22,9 @@ require "concierge/channel/email"
 require "concierge/channel/router"
 require "concierge/governance"
 require "concierge/outreach"
+require "concierge/change_detector"
+require "concierge/priority_service"
+require "concierge/budget"
 require "concierge/engine"
 
 # Concierge — a per-account AI customer success manager for Rails, built on RubyLLM.

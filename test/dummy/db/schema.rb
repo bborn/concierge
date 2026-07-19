@@ -10,12 +10,22 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_07_19_132739) do
+ActiveRecord::Schema[8.1].define(version: 2026_07_19_133147) do
   create_table "chats", force: :cascade do |t|
     t.datetime "created_at", null: false
     t.integer "model_id"
     t.datetime "updated_at", null: false
     t.index ["model_id"], name: "index_chats_on_model_id"
+  end
+
+  create_table "concierge_budget_ledgers", force: :cascade do |t|
+    t.datetime "created_at", null: false
+    t.string "subject_id", null: false
+    t.string "subject_type", null: false
+    t.integer "tokens_spent", default: 0, null: false
+    t.datetime "updated_at", null: false
+    t.date "window_on", null: false
+    t.index ["subject_type", "subject_id", "window_on"], name: "index_concierge_budget_ledgers_on_subject_window", unique: true
   end
 
   create_table "concierge_channel_deliveries", force: :cascade do |t|
@@ -36,6 +46,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_19_132739) do
     t.integer "chat_id", null: false
     t.datetime "created_at", null: false
     t.string "grain", default: "account", null: false
+    t.datetime "last_reviewed_at"
+    t.string "last_snapshot_digest"
     t.string "subject_id", null: false
     t.string "subject_type", null: false
     t.datetime "updated_at", null: false
@@ -67,6 +79,21 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_19_132739) do
     t.string "subject_type", null: false
     t.datetime "updated_at", null: false
     t.index ["subject_type", "subject_id"], name: "index_concierge_outreach_prefs_on_subject", unique: true
+  end
+
+  create_table "concierge_routines", force: :cascade do |t|
+    t.string "author", default: "agent", null: false
+    t.string "channel"
+    t.datetime "created_at", null: false
+    t.boolean "enabled", default: true, null: false
+    t.text "instruction", null: false
+    t.datetime "next_run_at"
+    t.string "schedule", null: false
+    t.string "subject_id", null: false
+    t.string "subject_type", null: false
+    t.datetime "updated_at", null: false
+    t.index ["enabled", "next_run_at"], name: "index_concierge_routines_on_enabled_and_next_run_at"
+    t.index ["subject_type", "subject_id"], name: "index_concierge_routines_on_subject"
   end
 
   create_table "messages", force: :cascade do |t|
