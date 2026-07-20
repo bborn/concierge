@@ -11,13 +11,12 @@ module Concierge
     # Record something learned about a subject.
     def remember(subject, body:, category: nil, source: :agent, pinned: false, tier: :account)
       @model.create!(
-        subject_type: subject.grain.to_s,
-        subject_id:   subject.id.to_s,
-        body:         body,
-        category:     category,
-        source:       source.to_s,
-        pinned:       pinned,
-        tier:         tier.to_s
+        **subject.key,
+        body:     body,
+        category: category,
+        source:   source.to_s,
+        pinned:   pinned,
+        tier:     tier.to_s
       )
     end
 
@@ -25,7 +24,7 @@ module Concierge
     # filter by subject (+category, +body LIKE query when given), then order
     # pinned-then-recent.
     def recall(subject, query: nil, category: nil, limit: 20)
-      rel = for_subject(subject).active
+      rel = @model.for_subject(subject).active
       rel = rel.by_category(category) if category
       rel = rel.where("body LIKE ?", "%#{sanitize_like(query)}%") if query.present?
       # pgvector drop-in seam: a semantic retriever would replace this ordering.
@@ -34,7 +33,7 @@ module Concierge
 
     # Soft-delete: the row is retained (audit/history) but excluded from recall.
     def forget(subject, id)
-      row = for_subject(subject).find_by(id: id)
+      row = @model.for_subject(subject).find_by(id: id)
       row&.update!(active: false)
       row
     end
@@ -51,15 +50,10 @@ module Concierge
 
     private
 
-    def for_subject(subject)
-      @model.where(subject_type: subject.grain.to_s, subject_id: subject.id.to_s)
-    end
-
     def memories_for(subject, account_subject)
-      keys = [ [ subject.grain.to_s, subject.id.to_s ] ]
-      keys << [ account_subject.grain.to_s, account_subject.id.to_s ] if account_subject
-      clause = keys.map { "(subject_type = ? AND subject_id = ?)" }.join(" OR ")
-      @model.where(clause, *keys.flatten)
+      subjects = [ subject, account_subject ].compact
+      clause = subjects.map { "(subject_type = ? AND subject_id = ?)" }.join(" OR ")
+      @model.where(clause, *subjects.flat_map { |s| s.key.values })
     end
 
     def sanitize_like(query)

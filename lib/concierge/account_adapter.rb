@@ -14,34 +14,32 @@ module Concierge
   # the runtime side (id_for, attribute_for, each_subject…) can read back what the
   # host declared.
   class AccountAdapter
+    extend DSL
+
     DEFAULT_ID = ->(record) { record.id }
 
     def initialize
-      @grain        = :account
-      @attributes   = {}
-      @scopes       = {}
-      @id_resolver  = DEFAULT_ID
-      @each_source  = nil
-      @find_source  = nil
+      @grain      = :account
+      @attributes = {}
+      @scopes     = {}
+      @id         = DEFAULT_ID
     end
 
-    # --- DSL (setter when given a value/block, reader otherwise) ---
+    # --- DSL (see Concierge::DSL: setter when given a value/block, reader bare) ---
 
-    def subject_class(klass = nil)
-      @subject_class = klass if klass
-      @subject_class
-    end
-
-    def grain(value = nil)
-      @grain = value.to_sym if value
-      @grain
-    end
+    dsl_value :subject_class
+    dsl_value(:grain, &:to_sym)
 
     # How to derive a subject's id from its record. Defaults to #id.
-    def id(&block)
-      @id_resolver = block if block
-      @id_resolver
-    end
+    dsl_block :id
+
+    # Override enumeration (sweep source). The block receives a yielder:
+    #   each { |&y| Tenant.active.find_each(&y) }
+    # Defaults to +subject_class.find_each+.
+    dsl_block :each
+
+    # Override single-record lookup. Defaults to +subject_class.find(id)+.
+    dsl_block :find
 
     # Map a named attribute to a lambda over the record.
     def attribute(name, &block)
@@ -53,28 +51,10 @@ module Concierge
       @scopes[name.to_sym] = block
     end
 
-    # Override enumeration (sweep source). The block receives a yielder:
-    #   each { |&y| Tenant.active.find_each(&y) }
-    # Defaults to +subject_class.find_each+.
-    def each(&block)
-      @each_source = block if block
-      @each_source
-    end
-
-    # Override single-record lookup. Defaults to +subject_class.find(id)+.
-    def find(&block)
-      @find_source = block if block
-      @find_source
-    end
-
     # --- Runtime ---
 
-    def attributes
-      @attributes.keys
-    end
-
     def id_for(record)
-      @id_resolver.call(record)
+      id.call(record)
     end
 
     def attribute_for(record, name)
@@ -97,8 +77,8 @@ module Concierge
     end
 
     # Resolve a Subject from its id.
-    def find_subject(id)
-      record = @find_source ? @find_source.call(id) : require_subject_class!.find(id)
+    def find_subject(subject_id)
+      record = find ? find.call(subject_id) : require_subject_class!.find(subject_id)
       build(record)
     end
 
@@ -106,8 +86,8 @@ module Concierge
     def each_subject
       return enum_for(:each_subject) unless block_given?
 
-      if @each_source
-        @each_source.call { |record| yield build(record) }
+      if each
+        each.call { |record| yield build(record) }
       else
         require_subject_class!.find_each { |record| yield build(record) }
       end

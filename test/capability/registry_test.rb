@@ -30,11 +30,6 @@ module Concierge
         assert_includes names, "remember"
         assert_includes names, "set_outreach_preference"
       end
-
-      test "for_llm is an alias for tools_for" do
-        assert_equal @registry.tools_for(@subject).map(&:name),
-                     @registry.for_llm(@subject).map(&:name)
-      end
     end
   end
 end

@@ -15,7 +15,7 @@ class UnsubscribeTest < ActionDispatch::IntegrationTest
     get "/concierge/unsubscribe/#{@token}"
 
     assert_response :success
-    assert Concierge::OutreachPreference.for_subject(@subject).opted_out
+    assert Concierge::OutreachPreference.for(@subject).opted_out
   end
 
   test "an unknown token is rejected" do

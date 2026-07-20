@@ -41,9 +41,6 @@ module Concierge
           entry.tool_class.new(subject: subject, run: run)
         end
       end
-
-      # The array to pass to +chat.with_tools(*...)+.
-      alias for_llm tools_for
     end
   end
 end

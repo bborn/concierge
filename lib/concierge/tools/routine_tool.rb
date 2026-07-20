@@ -17,7 +17,7 @@ module Concierge
         "manage_routine"
       end
 
-      def execute(action:, schedule: nil, instruction: nil, channel: nil, id: nil, author: "customer")
+      def perform(action:, schedule: nil, instruction: nil, channel: nil, id: nil, author: "customer")
         case action.to_s
         when "create"  then create(schedule, instruction, channel, author)
         when "update"  then update(id, schedule, instruction, channel)
@@ -25,8 +25,6 @@ module Concierge
         when "list"    then list
         else { error: "unknown action #{action.inspect}" }
         end
-      rescue => e
-        { error: e.message }
       end
 
       private

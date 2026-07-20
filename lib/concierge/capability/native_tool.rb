@@ -14,7 +14,21 @@ module Concierge
         super()
       end
 
+      # What RubyLLM calls. Subclasses implement +perform+ instead, so no tool has
+      # to repeat the rescue: a raising tool reports the error back into the tool
+      # loop rather than crashing the run.
+      def execute(**args)
+        perform(**args)
+      rescue => e
+        { error: e.message }
+      end
+
       protected
+
+      # Subclasses implement the actual work here.
+      def perform(**_args)
+        raise NotImplementedError
+      end
 
       # The only sanctioned data path for a tool: an account-scoped relation.
       def scoped(association)

@@ -5,6 +5,8 @@ module Concierge
   # ("once a week send me this report"). A single static sweep enqueues due rows
   # — no per-account cron (design §3.6, research constraint #6).
   class Routine < ApplicationRecord
+    include SubjectScoped
+
     AUTHORS = %w[agent customer].freeze
 
     validates :schedule, :instruction, presence: true
@@ -13,9 +15,6 @@ module Concierge
 
     scope :enabled, -> { where(enabled: true) }
     scope :due, ->(now = Time.current) { enabled.where(next_run_at: ..now) }
-    scope :for_subject, ->(subject) {
-      where(subject_type: subject.grain.to_s, subject_id: subject.id.to_s)
-    }
 
     before_validation :ensure_next_run_at, on: :create
 

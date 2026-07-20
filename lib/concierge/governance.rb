@@ -21,7 +21,7 @@ module Concierge
 
     # May we send this kind to this subject right now?
     def allow?(subject, kind: "outreach")
-      pref = OutreachPreference.for_subject(subject)
+      pref = OutreachPreference.for(subject)
       return false if pref.opted_out
       return false if within_quiet_hours?(pref)
       return false unless frequency_ok?(subject, pref, kind)
@@ -43,8 +43,7 @@ module Concierge
     # (email needs it before the send).
     def record!(subject, channel:, kind: "outreach", payload: {}, token: nil)
       @deliveries.create!(
-        subject_type:      subject.grain.to_s,
-        subject_id:        subject.id.to_s,
+        **subject.key,
         channel:           channel.to_s,
         kind:              kind.to_s,
         sent_at:           now,

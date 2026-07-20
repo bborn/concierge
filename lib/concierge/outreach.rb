@@ -45,12 +45,11 @@ module Concierge
 
     def draft_to_outbox(payload)
       OutboxItem.create!(
-        subject_type: @subject.grain.to_s,
-        subject_id:   @subject.id.to_s,
-        body:         payload[:body],
-        channel:      @preferred&.to_s,
-        kind:         @kind,
-        state:        "pending"
+        **@subject.key,
+        body:    payload[:body],
+        channel: @preferred&.to_s,
+        kind:    @kind,
+        state:   "pending"
       )
       :drafted
     end

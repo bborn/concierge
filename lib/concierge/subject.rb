@@ -21,6 +21,12 @@ module Concierge
       record
     end
 
+    # The column pair every Concierge table keys a subject by. One rule, so no
+    # model, store, or query has to spell out the (grain, id) stringification.
+    def key
+      { subject_type: grain.to_s, subject_id: id.to_s }
+    end
+
     # :account or :user — the grain the host opted into.
     def grain
       adapter.grain

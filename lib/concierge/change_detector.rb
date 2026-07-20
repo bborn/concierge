@@ -16,15 +16,16 @@ module Concierge
     end
 
     def changed?
-      conversation = Conversation.for_subject(@subject)
-      return true if conversation.nil? || conversation.last_snapshot_digest.blank?
-
-      conversation.last_snapshot_digest != current_digest
+      last = Conversation.find_by_subject(@subject)&.last_snapshot_digest
+      last.blank? || last != current_digest
     end
 
     def mark_reviewed!(at: nil)
-      conversation = Conversation.for_subject(@subject) || ChatResolver.call(@subject) && Conversation.for_subject(@subject)
-      conversation&.update!(last_snapshot_digest: current_digest, last_reviewed_at: at || Time.current)
+      # Resolving the chat is what creates the conversation row when there isn't
+      # one yet — there's nowhere else to record the digest.
+      ChatResolver.call(@subject) unless Conversation.find_by_subject(@subject)
+      Conversation.find_by_subject(@subject)
+        &.update!(last_snapshot_digest: current_digest, last_reviewed_at: at || Time.current)
     end
 
     private

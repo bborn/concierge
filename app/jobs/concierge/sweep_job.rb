@@ -8,22 +8,19 @@ module Concierge
 
     def perform(now: Time.current)
       budget = Concierge::Budget.new
+      candidates = Concierge::PriorityService.order(due_routines(now)) { |c| c[:subject] }
 
-      candidates = due_routines(now)
-      subjects = candidates.map { |r| r[:subject] }
-      ordered = Concierge::PriorityService.order(subjects)
-
-      ordered.each do |subject|
-        routine = candidates.find { |c| c[:subject] == subject }
+      candidates.each do |candidate|
+        subject = candidate[:subject]
         next unless Concierge::ChangeDetector.changed?(subject)
         next if budget.exhausted?(subject)
 
         Concierge::AccountReviewJob.perform_later(
           subject.id,
-          instruction: routine[:instruction],
-          channel: routine[:channel]
+          instruction: candidate[:instruction],
+          channel: candidate[:channel]
         )
-        routine[:record]&.advance!(now)
+        candidate[:record]&.advance!(now)
       end
     end
 

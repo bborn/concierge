@@ -3,15 +3,15 @@ module Concierge
   # Phase 4 lands the frequency lever so the set_outreach_preference tool has a
   # real target; Phase 6 governance reads and extends it (opt-out, quiet hours).
   class OutreachPreference < ApplicationRecord
+    include SubjectScoped
+
     FREQUENCIES = %w[off less normal more].freeze
 
     validates :frequency, inclusion: { in: FREQUENCIES }
 
-    def self.for_subject(subject)
-      find_or_initialize_by(
-        subject_type: subject.grain.to_s,
-        subject_id:   subject.id.to_s
-      )
+    # The subject's preferences, defaulted (unsaved) when they've never set any.
+    def self.for(subject)
+      find_or_initialize_by(subject.key)
     end
   end
 end

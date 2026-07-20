@@ -64,8 +64,8 @@ module Concierge
       Concierge::Test::FakeChat.script(reply: "b")
       Concierge::Run.reactive(other_subject, "hi")
 
-      chat_a = Conversation.for_subject(@subject).chat_id
-      chat_b = Conversation.for_subject(other_subject).chat_id
+      chat_a = Conversation.find_by_subject(@subject).chat_id
+      chat_b = Conversation.find_by_subject(other_subject).chat_id
       refute_equal chat_a, chat_b
     end
 

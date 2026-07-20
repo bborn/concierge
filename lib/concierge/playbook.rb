@@ -12,6 +12,8 @@ module Concierge
   #
   # As with AccountAdapter, each setter doubles as a reader when called bare.
   class Playbook
+    extend DSL
+
     Persona = Struct.new(:name, :avatar, :voice, keyword_init: true)
 
     # A neutral default so the agent has a usable voice out of the box. Hosts
@@ -23,32 +25,15 @@ module Concierge
 
     def initialize
       @engagement_signals = {}
-      @segments           = {}
       @account_types      = []
     end
 
-    def product_brief(text = nil)
-      @product_brief = text if text
-      @product_brief
-    end
-
-    def goals(text = nil)
-      @goals = text if text
-      @goals
-    end
+    dsl_value :product_brief
+    dsl_value :goals
 
     def account_types(*names)
       @account_types.concat(names.flatten.map(&:to_sym)) if names.any?
       @account_types
-    end
-
-    # A named segment predicate over a Subject (e.g. high-value, at-risk).
-    def segment(name, &block)
-      @segments[name.to_sym] = block
-    end
-
-    def segments
-      @segments
     end
 
     # A named engagement signal — a lambda over a Subject whose value feeds the

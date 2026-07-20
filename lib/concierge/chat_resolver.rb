@@ -13,7 +13,7 @@ module Concierge
     end
 
     def call
-      conversation = Conversation.for_subject(@subject) || create_conversation
+      conversation = Conversation.find_by_subject(@subject) || create_conversation
       conversation.chat_record
     end
 
@@ -23,17 +23,8 @@ module Concierge
       # Create the Chat record without assigning a model — assigning one eagerly
       # resolves the provider (and demands its API key). The model is applied to
       # the RubyLLM chat at ask-time via the chat_factory instead.
-      chat = chat_model.create!
-      Conversation.create!(
-        subject_type: @subject.grain.to_s,
-        subject_id:   @subject.id.to_s,
-        grain:        @subject.grain.to_s,
-        chat_id:      chat.id
-      )
-    end
-
-    def chat_model
-      Concierge.config.chat_model_name.constantize
+      chat = Concierge.chat_model.create!
+      Conversation.create!(**@subject.key, grain: @subject.grain.to_s, chat_id: chat.id)
     end
   end
 end

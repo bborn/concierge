@@ -24,12 +24,12 @@ module Concierge
     end
 
     test "opted-out subject is suppressed" do
-      OutreachPreference.for_subject(@subject).update!(opted_out: true)
+      OutreachPreference.for(@subject).update!(opted_out: true)
       assert_equal :suppressed, Outreach.deliver(@result, @subject)
     end
 
     test "second send inside the frequency window is suppressed" do
-      OutreachPreference.for_subject(@subject).update!(frequency: "normal")
+      OutreachPreference.for(@subject).update!(frequency: "normal")
       assert_equal :delivered, Outreach.deliver(@result, @subject, channel: :in_app)
       assert_equal :suppressed, Outreach.deliver(@result, @subject, channel: :in_app)
     end
@@ -38,7 +38,7 @@ module Concierge
       # A daily-cap subject would be blocked a day later; 'less' is weekly, but a
       # prior send 2 days ago should now be allowed under 'normal' and blocked
       # under a fresh 'more'/'normal' window — here we assert the lever is read.
-      OutreachPreference.for_subject(@subject).update!(frequency: "more") # hourly
+      OutreachPreference.for(@subject).update!(frequency: "more") # hourly
       ChannelDelivery.create!(subject_type: "account", subject_id: @tenant.id.to_s,
                               channel: "in_app", kind: "outreach", sent_at: 90.minutes.ago)
 
@@ -54,7 +54,7 @@ module Concierge
       OutreachPreference.find_or_initialize_by(subject_type: delivery.subject_type,
                                                subject_id: delivery.subject_id).update!(opted_out: true)
 
-      assert OutreachPreference.for_subject(@subject).opted_out
+      assert OutreachPreference.for(@subject).opted_out
       assert_equal :suppressed, Outreach.deliver(@result, @subject, channel: :in_app)
     end
   end

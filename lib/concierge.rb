@@ -1,6 +1,7 @@
 require "ruby_llm"
 
 require "concierge/version"
+require "concierge/dsl"
 require "concierge/configuration"
 require "concierge/subject"
 require "concierge/account_adapter"
@@ -66,6 +67,12 @@ module Concierge
     # Rails logger when mounted.
     def logger
       config.logger || (defined?(Rails) ? Rails.logger : nil)
+    end
+
+    # The host's RubyLLM chat class. Resolved at call time so the name stays
+    # configurable and the gem needs no constant at load.
+    def chat_model
+      config.chat_model_name.constantize
     end
   end
 end

@@ -17,7 +17,7 @@ module Concierge
       assert_equal 1, ChannelDelivery.for_subject(@subject).count
       assert_equal [ "Here is your weekly update." ], Concierge::InAppInbox.messages.map { |m| m[:body] }
       assert Concierge::Budget.new.spent_for(@subject).positive?
-      assert Conversation.for_subject(@subject).last_reviewed_at.present?
+      assert Conversation.find_by_subject(@subject).last_reviewed_at.present?
     end
   end
 end

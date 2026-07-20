@@ -3,6 +3,8 @@ module Concierge
   # a handoff is active, autonomous proactive sends for that subject are
   # suppressed (design §0.8). Takeover content feeds the learning loop (§0.9).
   class Handoff < ApplicationRecord
+    include SubjectScoped
+
     STATES = %w[active released].freeze
 
     validates :state, inclusion: { in: STATES }
@@ -10,17 +12,16 @@ module Concierge
     scope :active, -> { where(state: "active") }
 
     def self.active_for(subject)
-      active.find_by(subject_type: subject.grain.to_s, subject_id: subject.id.to_s)
+      active.for_subject(subject).first
     end
 
     # Start a takeover (idempotent — returns the existing active handoff if any).
     def self.seize!(subject, operator:)
       active_for(subject) || create!(
-        subject_type: subject.grain.to_s,
-        subject_id:   subject.id.to_s,
-        operator:     operator,
-        state:        "active",
-        seized_at:    Time.current
+        **subject.key,
+        operator:  operator,
+        state:     "active",
+        seized_at: Time.current
       )
     end
 

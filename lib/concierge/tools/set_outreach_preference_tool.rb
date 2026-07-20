@@ -14,17 +14,14 @@ module Concierge
         "set_outreach_preference"
       end
 
-      def execute(frequency:)
+      def perform(frequency:)
         frequency = frequency.to_s
         unless Concierge::OutreachPreference::FREQUENCIES.include?(frequency)
           return { error: "frequency must be one of #{Concierge::OutreachPreference::FREQUENCIES.join(', ')}" }
         end
 
-        pref = Concierge::OutreachPreference.for_subject(subject)
-        pref.update!(frequency: frequency)
+        Concierge::OutreachPreference.for(subject).update!(frequency: frequency)
         { ok: true, frequency: frequency }
-      rescue => e
-        { error: e.message }
       end
     end
   end

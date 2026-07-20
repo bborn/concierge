@@ -8,9 +8,12 @@ module Concierge
       scorer ? scorer.call(subject) : 0
     end
 
-    # Highest score first; stable for equal scores.
-    def self.order(subjects)
-      subjects.sort_by.with_index { |subject, i| [ -score(subject), i ] }
+    # Highest score first; stable for equal scores. Items need not be Subjects —
+    # pass a block to say where the Subject lives inside each item.
+    def self.order(items)
+      items.sort_by.with_index do |item, i|
+        [ -score(block_given? ? yield(item) : item), i ]
+      end
     end
   end
 end

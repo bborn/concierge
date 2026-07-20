@@ -49,12 +49,19 @@ module Concierge
         tool = SetOutreachPreferenceTool.new(subject: @subject)
         assert_equal({ ok: true, frequency: "less" }, tool.execute(frequency: "less"))
 
-        assert_equal "less", OutreachPreference.for_subject(@subject).frequency
+        assert_equal "less", OutreachPreference.for(@subject).frequency
       end
 
       test "set_outreach_preference rejects an unknown frequency" do
         result = SetOutreachPreferenceTool.new(subject: @subject).execute(frequency: "sometimes")
         assert result[:error]
+      end
+
+      test "a raising tool reports the error instead of crashing the run" do
+        tool = RememberTool.new(subject: @subject)
+        tool.define_singleton_method(:perform) { |**| raise "boom" }
+
+        assert_equal({ error: "boom" }, tool.execute(body: "anything"))
       end
 
       test "routine tool creates an account-scoped routine (Phase 7)" do

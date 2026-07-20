@@ -10,11 +10,9 @@ module Concierge
         "remember"
       end
 
-      def execute(body:, category: nil)
+      def perform(body:, category: nil)
         context_store.remember(subject, body: body, category: category, source: :agent)
         { ok: true }
-      rescue => e
-        { error: e.message }
       end
     end
 
@@ -28,10 +26,8 @@ module Concierge
         "recall"
       end
 
-      def execute(query: nil, category: nil)
+      def perform(query: nil, category: nil)
         context_store.recall(subject, query: query, category: category).map(&:body)
-      rescue => e
-        { error: e.message }
       end
     end
 
@@ -44,11 +40,9 @@ module Concierge
         "forget"
       end
 
-      def execute(id:)
+      def perform(id:)
         row = context_store.forget(subject, id)
         row ? { ok: true } : { error: "no note ##{id} for this account" }
-      rescue => e
-        { error: e.message }
       end
     end
   end
