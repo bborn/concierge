@@ -8,8 +8,11 @@ module Concierge
         @channels = channels || []
       end
 
-      # @param preferred [Symbol, nil] a specific channel name to try first
+      # @param preferred [Symbol, String, nil] a specific channel name to try
+      #   first. Coerced to a Symbol so a String-valued routine channel
+      #   ("email") matches a channel's Symbol #name (:email).
       def pick(subject, preferred: nil)
+        preferred = preferred&.to_sym
         ordered(preferred).each do |channel_class|
           channel = channel_class.new(subject: subject)
           return channel if channel.configured? && channel.available_for?(subject)

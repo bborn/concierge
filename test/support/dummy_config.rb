@@ -6,8 +6,9 @@ module Concierge
     # boundaries land.
     def self.configure!
       Concierge.configure do |c|
-        c.default_model = "claude-sonnet-4-5"
-        c.chat_factory  = ->(model:, chat_record: nil) { FakeChat.current }
+        c.default_model    = "claude-sonnet-4-5"
+        c.default_provider = :anthropic
+        c.chat_factory     = ->(model:, chat_record: nil) { FakeChat.current }
 
         c.account do
           subject_class Tenant

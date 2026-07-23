@@ -20,10 +20,12 @@ module Concierge
       private
 
       def perform_delivery(payload)
+        # Pass only serializable primitives — deliver_later serializes every
+        # mailer param through ActiveJob, and a Concierge::Subject is not
+        # serializable. The mailer only needs the address, payload, and token.
         Concierge::OutreachMailer
           .with(
             to: address_for(subject),
-            subject_ref: subject,
             payload: payload,
             unsubscribe_token: payload[:unsubscribe_token]
           )

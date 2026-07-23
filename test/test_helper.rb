@@ -1,9 +1,11 @@
 # Configure Rails Environment
 ENV["RAILS_ENV"] = "test"
 
-# Dummy provider keys so RubyLLM's provider resolution succeeds when a Chat record
-# is created. No real request is ever made — FakeChat intercepts every #ask.
-ENV["OPENAI_API_KEY"]    ||= "test-openai-key"
+# Only the Anthropic key is set — deliberately. The dummy config declares
+# default_provider :anthropic, so creating a Chat never touches OpenAI. If this
+# regressed (a Chat resolving RubyLLM's global default provider), the suite would
+# fail with a missing-OpenAI-key error instead of silently passing on a crutch
+# key. No real request is ever made — FakeChat intercepts every #ask.
 ENV["ANTHROPIC_API_KEY"] ||= "test-anthropic-key"
 
 require_relative "../test/dummy/config/environment"

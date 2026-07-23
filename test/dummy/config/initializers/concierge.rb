@@ -6,7 +6,8 @@
 
 Rails.application.config.to_prepare do
   Concierge.configure do |c|
-    c.default_model = "claude-sonnet-4-5"
+    c.default_model    = "claude-sonnet-4-5"
+    c.default_provider = :anthropic
 
     # Without an API key there is nothing to talk to, so fall back to a scripted
     # reply. This keeps the dummy app usable offline; set ANTHROPIC_API_KEY to

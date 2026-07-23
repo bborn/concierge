@@ -8,6 +8,13 @@ module Concierge
     # "claude-sonnet-4-5"). Hosts almost always set this.
     attr_accessor :default_model
 
+    # Optional provider for +default_model+ (e.g. :anthropic). When set, the
+    # persistent Chat is created with the model assumed-to-exist, so record
+    # creation never consults the model registry or resolves RubyLLM's *global*
+    # default provider — which would otherwise demand credentials for a provider
+    # Concierge doesn't use. Leave nil to let RubyLLM resolve the model normally.
+    attr_accessor :default_provider
+
     # The host's RubyLLM chat model class name. Concierge reuses the host-owned
     # +Chat+ table rather than owning conversations itself.
     attr_accessor :chat_model_name
