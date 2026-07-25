@@ -33,12 +33,15 @@ module Concierge
         @entries.dup
       end
 
-      # Per-run tool instances bound to +subject+.
-      def tools_for(subject, run = nil, include_writes: true)
+      # Per-run tool instances bound to +subject+. A multi-agent runtime also
+      # passes the (Agent × Subject) +scope+ and its namespaced memory +store+,
+      # so the tools it builds can never write outside the agent's namespace
+      # (design §10.1). Both default to nil — single-agent behaviour is unchanged.
+      def tools_for(subject, run = nil, include_writes: true, scope: nil, store: nil)
         @entries.filter_map do |entry|
           next if entry.access == :write && !include_writes
 
-          entry.tool_class.new(subject: subject, run: run)
+          entry.tool_class.new(subject: subject, run: run, scope: scope, store: store)
         end
       end
     end

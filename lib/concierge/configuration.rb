@@ -73,10 +73,18 @@ module Concierge
     # fails closed rather than shipping an open dashboard).
     attr_accessor :authenticate_admin
 
+    # --- Multi-agent spike (Phase 10, step 0 — throwaway; see Concierge::Spike) ---
+
+    # Turns on the (Agent × Subject) prototype: the plural +agent+ DSL below still
+    # parses without it, but nothing in the engine acts on it. Off by default.
+    attr_accessor :multi_agent_spike
+
     def initialize
       @chat_model_name  = "Chat"
       @draft_and_review = false
+      @multi_agent_spike = false
       @chat_factory     = DEFAULT_CHAT_FACTORY
+      @agents           = {}
     end
 
     # Declare what an account is. With a block, builds and stores the adapter;
@@ -113,6 +121,46 @@ module Concierge
       @capabilities
     end
 
+    # The default agent an un-pluralized host implicitly is (design §10.9).
+    DEFAULT_AGENT_SLUG = :csm
+
+    # Declare a business function. Same setter/reader rule as every other block:
+    # with a block it defines, bare it reads back the resolved agent.
+    #
+    #   c.agent :csm do
+    #     persona name: "Kit", voice: "warm, concise, never pushy"
+    #     playbook     { product_brief "..." }
+    #     capabilities { register Concierge::Tools::RecallTool, access: :read }
+    #     authority    { default :autonomous }
+    #   end
+    #
+    #   c.agent(:csm).authority.level_for("message.outreach")  # => :autonomous
+    #
+    # Reading an agent that was never declared returns nil, *except* for +:csm+:
+    # a host that only ever used the top-level blocks is the CSM, so it folds
+    # into an implicit +:csm+ agent (§10.9 back-compat) and keeps working.
+    def agent(slug = DEFAULT_AGENT_SLUG, &block)
+      slug = slug.to_sym
+
+      if block
+        found = (@agents[slug] ||= Spike::Agent.new(slug))
+        found.instance_eval(&block)
+        return found
+      end
+
+      @agents[slug] || (slug == DEFAULT_AGENT_SLUG ? implicit_csm_agent : nil)
+    end
+
+    # Every declared agent, in declaration order. A host that declared none gets
+    # the implicit CSM, so callers never have to special-case "no agents yet".
+    def agents
+      @agents.any? ? @agents.values : [ implicit_csm_agent ]
+    end
+
+    def agent_declared?(slug)
+      @agents.key?(slug.to_sym)
+    end
+
     # Default chat factory: prefer resuming the persisted conversation (RubyLLM's
     # +acts_as_chat+ gives records a +to_llm+), else a fresh in-memory chat.
     DEFAULT_CHAT_FACTORY = lambda do |model:, chat_record: nil|
@@ -120,6 +168,28 @@ module Concierge
         chat_record.to_llm
       else
         RubyLLM.chat(model: model)
+      end
+    end
+
+    private
+
+    # The migration bridge (§10.9): the existing top-level blocks *are* the CSM.
+    # Built lazily and memoized so `config.agent(:csm).playbook` reads back the
+    # very same Playbook object `config.playbook` returns — no copy to drift.
+    def implicit_csm_agent
+      @implicit_csm_agent ||= begin
+        top_level_playbook     = @playbook
+        top_level_capabilities = capabilities
+        # draft_and_review was "stage the one outreach action for a human"; that
+        # is exactly :human_approval on the message action class.
+        outreach_level = @draft_and_review ? :human_approval : :autonomous
+
+        Spike::Agent.new(DEFAULT_AGENT_SLUG).tap do |a|
+          a.instance_variable_set(:@playbook, top_level_playbook) if top_level_playbook
+          a.instance_variable_set(:@capabilities, top_level_capabilities)
+          a.instance_variable_set(:@model, @default_model)
+          a.authority { action "message.outreach", outreach_level }
+        end
       end
     end
   end

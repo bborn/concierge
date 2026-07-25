@@ -8,10 +8,22 @@ module Concierge
     class NativeTool < RubyLLM::Tool
       attr_reader :subject, :run
 
-      def initialize(subject:, run: nil)
+      # +scope+ and +store+ are the (Agent × Subject) seam (design §10.1): when a
+      # multi-agent runtime binds a Scope and its namespaced store, the tool keys
+      # its rows by the pair; when nobody does, it keys by the Subject alone,
+      # exactly as before. One tool class, both runtimes.
+      def initialize(subject:, run: nil, scope: nil, store: nil)
         @subject = subject
         @run     = run
+        @scope   = scope
+        @store   = store
         super()
+      end
+
+      # What this tool's rows are keyed by. Both a Scope and a Subject answer
+      # +#key+, so +Model.for_scope(scope)+ reads the same either way.
+      def scope
+        @scope || @subject
       end
 
       # What RubyLLM calls. Subclasses implement +perform+ instead, so no tool has
@@ -35,8 +47,10 @@ module Concierge
         subject.scope_for(association)
       end
 
+      # The memory store to write through: the namespaced one when a multi-agent
+      # runtime injected it, the per-subject default otherwise.
       def context_store
-        @context_store ||= Concierge::ContextStore.new
+        @context_store ||= @store || Concierge::ContextStore.new
       end
     end
   end

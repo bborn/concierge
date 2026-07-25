@@ -30,12 +30,12 @@ module Concierge
       private
 
       def create(schedule, instruction, channel, author)
-        routine = scope.create!(schedule: schedule, instruction: instruction, channel: channel, author: author)
+        routine = routines.create!(schedule: schedule, instruction: instruction, channel: channel, author: author)
         { ok: true, id: routine.id, next_run_at: routine.next_run_at }
       end
 
       def update(id, schedule, instruction, channel)
-        routine = scope.find_by(id: id)
+        routine = routines.find_by(id: id)
         return { error: "no routine ##{id} for this account" } unless routine
 
         attrs = { schedule: schedule, instruction: instruction, channel: channel }.compact
@@ -44,7 +44,7 @@ module Concierge
       end
 
       def destroy(id)
-        routine = scope.find_by(id: id)
+        routine = routines.find_by(id: id)
         return { error: "no routine ##{id} for this account" } unless routine
 
         routine.destroy!
@@ -52,11 +52,14 @@ module Concierge
       end
 
       def list
-        scope.map { |r| { id: r.id, schedule: r.schedule, instruction: r.instruction, enabled: r.enabled } }
+        routines.map { |r| { id: r.id, schedule: r.schedule, instruction: r.instruction, enabled: r.enabled } }
       end
 
-      def scope
-        Concierge::Routine.for_subject(subject)
+      # Routines are per (agent, subject): the billing agent's schedule is not
+      # the CSM's. +scope+ is the Scope when a multi-agent runtime bound one,
+      # else the bare Subject (NativeTool#scope).
+      def routines
+        Concierge::Routine.for_scope(scope)
       end
     end
   end
