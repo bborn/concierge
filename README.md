@@ -296,6 +296,64 @@ the engine cannot issue a refund past your guard. That is why money defaults to
 The kill switch is read again at execution, not just at run start, so disabling
 an agent also halts its already-approved work.
 
+## Slack as the remote control
+
+Delivery and approval **intake** are two seams. `Concierge::Channel::*` is
+outbound-only and never raises; the click that comes *back* is a decision, and it
+goes through `ApprovalIntake`. So Slack is not a channel here — it is a surface,
+and it needs a real Slack app rather than an incoming webhook, because a webhook
+cannot tell you *who clicked*.
+
+```ruby
+config.slack do
+  signing_secret ENV["SLACK_SIGNING_SECRET"]
+  bot_token      ENV["SLACK_BOT_TOKEN"]
+
+  channel :csm,      "C0CSM"        # one channel per agent
+  channel :disputes, "C0DISPUTES"
+
+  daily_card_cap 20
+  actor_for ->(user) { User.find_by(slack_id: user["id"])&.email }
+end
+
+config.proposal_notifier = Concierge::Slack::Notifier
+```
+
+Point the Slack app's **Interactivity** URL at `POST /concierge/slack/interactions`
+and its **Events** URL at `POST /concierge/slack/events`. Both verify Slack's
+`v0` signature over the raw body (five-minute replay window) before reading a
+byte of the payload; with no signing secret configured, both answer 404.
+
+A proposal arrives as a Block Kit card with **Approve**, **Reject** and
+**Correct**. The handler order is fixed:
+
+```
+signed payload → write the decision to the proposal row → execute → update the card
+```
+
+The card is updated **last** and is allowed to fail. Postgres is the record; a
+stale card with a correct row is recoverable, and the reverse would be a decision
+that exists only in a chat message. Every decision is also available on
+`/concierge/admin/proposals`, so a Slack outage costs convenience, not authority —
+`/concierge/admin/slack` shows which cards posted, which the cap suppressed, and
+which failed.
+
+- **Reject requires a reason.** The button opens a modal; a blank or whitespace
+  reason is refused there, not stored.
+- **Correct** is edit-then-approve, offering one input per argument the agent
+  actually proposed — a correction edits an action, it cannot author a new one.
+  It also opens the rule write path: "what should the agent do differently next
+  time?" becomes a **proposed** rule, never an active one.
+- **A reply in a case thread** (one thread per `(agent, account)`) is captured as
+  a takeover note through `Learning`, in that agent's namespace only.
+
+Anti-noise is structural, not advisory: a **per-agent daily card cap** (over it,
+the card is not posted and the suppression is recorded — the proposal is
+untouched), **no bare `@channel`** (broadcast escapes in a model-written draft are
+neutralized and flagged), and **digests instead of cards for unilateral work** —
+schedule `Concierge::SlackDigestJob` and each agent reports its own autonomous
+sends in one message.
+
 ## Security
 
 Every tool and query is scoped to the current **(agent, account)** pair — a tool

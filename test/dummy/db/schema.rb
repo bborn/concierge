@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_07_25_142134) do
+ActiveRecord::Schema[8.1].define(version: 2026_07_25_150201) do
   create_table "chats", force: :cascade do |t|
     t.datetime "created_at", null: false
     t.integer "model_id"
@@ -205,6 +205,26 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_25_142134) do
     t.datetime "updated_at", null: false
     t.index ["agent_slug", "subject_type", "subject_id"], name: "index_concierge_routines_on_scope"
     t.index ["enabled", "next_run_at"], name: "index_concierge_routines_on_enabled_and_next_run_at"
+  end
+
+  create_table "concierge_slack_cards", force: :cascade do |t|
+    t.bigint "agent_proposal_id", null: false
+    t.string "agent_slug", null: false
+    t.string "channel_id"
+    t.datetime "created_at", null: false
+    t.text "error"
+    t.string "message_ts"
+    t.datetime "posted_at"
+    t.string "state", default: "posted", null: false
+    t.string "subject_id", null: false
+    t.string "subject_type", null: false
+    t.string "thread_ts"
+    t.datetime "updated_at", null: false
+    t.index ["agent_proposal_id"], name: "index_concierge_slack_cards_on_agent_proposal_id", unique: true
+    t.index ["agent_slug", "posted_at"], name: "index_concierge_slack_cards_on_agent_and_posted_at"
+    t.index ["agent_slug", "subject_type", "subject_id", "created_at"], name: "index_concierge_slack_cards_on_scope_and_recency"
+    t.index ["channel_id", "message_ts"], name: "index_concierge_slack_cards_on_message"
+    t.index ["channel_id", "thread_ts"], name: "index_concierge_slack_cards_on_thread"
   end
 
   create_table "messages", force: :cascade do |t|

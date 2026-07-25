@@ -141,8 +141,12 @@ module Concierge
       Concierge::AgentRule.create!(**csm.key, body: "a rule", state: "active")
       Concierge::AgentRun.create!(**csm.key, trigger: "reactive", status: "ok")
 
+      Concierge::SlackCard.create!(**csm.key, agent_proposal_id: 1, state: "posted",
+                                   channel_id: "C0CSM", message_ts: "1.1", posted_at: Time.current)
+
       [ Concierge::Handoff, Concierge::ChannelDelivery, Concierge::Conversation,
-        Concierge::AgentProposal, Concierge::AgentRule, Concierge::AgentRun ].each do |model|
+        Concierge::AgentProposal, Concierge::AgentRule, Concierge::AgentRun,
+        Concierge::SlackCard ].each do |model|
         assert_equal 1, model.for_scope(csm).count,   "#{model} lost the CSM's row"
         assert_equal 0, model.for_scope(billing).count,
                      "#{model} leaked the CSM's row into billing"
@@ -213,6 +217,108 @@ module Concierge
       assert_equal :executed,
                    Concierge::ApprovalIntake.approve(Concierge::AgentProposal.for_scope(globex).sole,
                                                      by: "sam@acme.test")
+    end
+
+    test "every cell's Slack cards are its own, and nothing else's" do
+      # The Slack seam adds a second surface onto the same rows, so it doubles the
+      # isolation surface again (§10.12). A card that leaked across either dimension
+      # would be a disclosure bug: it would put one account's business — or one
+      # business function's — in front of the wrong channel.
+      transport = Concierge::Test.configure_slack!(
+        channels: { csm: "C0CSM", billing: "C0BILLING" }
+      )
+      Concierge.configure { |c| c.agent(:csm) { authority { action "record.update", :human_approval } } }
+
+      @grid.each do |(agent_slug, account), scope|
+        Concierge::Proposal.propose(scope, action_class: "record.update",
+                                           payload: { "note" => "for #{agent_slug}/#{account}" },
+                                           idempotency_key: "#{agent_slug}-#{account}")
+      end
+
+      @grid.each do |(agent_slug, account), scope|
+        cards = Concierge::SlackCard.for_scope(scope)
+
+        assert_equal 1, cards.count, "#{agent_slug}/#{account} saw #{cards.count} cards"
+        assert_equal agent_slug.to_s, cards.sole.agent_slug
+        assert_equal Concierge.config.slack.channel(agent_slug), cards.sole.channel_id,
+                     "#{agent_slug}/#{account}'s card went to another agent's channel"
+      end
+
+      # Each agent's cards went only to its own channel, across both accounts.
+      posted = transport.calls_to("chat.postMessage").group_by { |call| call.payload[:channel] }
+      assert_equal 2, posted["C0CSM"].size
+      assert_equal 2, posted["C0BILLING"].size
+    end
+
+    test "a case thread is per (agent, account) and shared with no other cell" do
+      transport = Concierge::Test.configure_slack!
+      Concierge.configure { |c| c.agent(:csm) { authority { action "record.update", :human_approval } } }
+
+      # Two proposals per cell: the second must reply into *its own* cell's thread.
+      @grid.each do |(agent_slug, account), scope|
+        2.times do |index|
+          Concierge::Proposal.propose(scope, action_class: "record.update",
+                                             payload: { "note" => "#{agent_slug}/#{account}/#{index}" },
+                                             idempotency_key: "#{agent_slug}-#{account}-#{index}")
+        end
+      end
+
+      threads = @grid.transform_values { |scope| Concierge::SlackCard.thread_ts_for(scope) }
+
+      assert_equal 4, threads.values.compact.uniq.size, "two cells shared one Slack thread"
+      @grid.each do |cell, scope|
+        cards = Concierge::SlackCard.for_scope(scope)
+
+        assert_equal 2, cards.count
+        assert_equal [ threads[cell] ], cards.map(&:thread_ts).uniq,
+                     "#{cell.inspect} posted into a thread that is not its own"
+      end
+      assert_empty transport.calls_to("chat.postMessage").select { |call|
+        call.payload[:thread_ts] && !threads.values.include?(call.payload[:thread_ts])
+      }, "a card replied into a thread belonging to no cell"
+    end
+
+    test "the daily card cap is counted per agent, not across all of them" do
+      # An agent-wide count would let one busy business function mute another's
+      # approvals — the cap crossing the agent boundary is the same leak in a
+      # different costume.
+      Concierge::Test.configure_slack!(cap: 1)
+      Concierge.configure { |c| c.agent(:csm) { authority { action "record.update", :human_approval } } }
+
+      @grid.each do |(agent_slug, account), scope|
+        Concierge::Proposal.propose(scope, action_class: "record.update",
+                                           payload: { "note" => "#{agent_slug}/#{account}" },
+                                           idempotency_key: "#{agent_slug}-#{account}")
+      end
+
+      assert_equal 1, Concierge::SlackCard.posted_today(:csm).count
+      assert_equal 1, Concierge::SlackCard.posted_today(:billing).count
+      # ...and the two that were capped are still awaiting a human, in their own cells.
+      assert_equal 2, Concierge::SlackCard.suppressed.count
+      assert_equal 4, Concierge::AgentProposal.awaiting.count
+    end
+
+    test "a Slack thread reply lands in its own cell's memory and nobody else's" do
+      Concierge::Test.configure_slack!
+      billing = @grid[[ :billing, :acme ]]
+      Concierge::Proposal.propose(billing, action_class: "record.update",
+                                           payload: { "note" => "n" }, idempotency_key: "b-a")
+      card = Concierge::SlackCard.for_scope(billing).sole
+
+      Concierge::Slack::Intake.handle_event(
+        { "type" => "event_callback",
+          "event" => { "type" => "message", "channel" => card.channel_id,
+                       "thread_ts" => card.thread_ts, "user" => "U9",
+                       "text" => "Their CFO wants this in writing." } }
+      )
+
+      assert_includes Concierge::Memory.for_scope(billing).map(&:body),
+                      "Their CFO wants this in writing."
+      [ [ :csm, :acme ], [ :billing, :globex ], [ :csm, :globex ] ].each do |cell|
+        refute_includes Concierge::Memory.for_scope(@grid[cell]).map(&:body),
+                        "Their CFO wants this in writing.",
+                        "a Slack thread reply leaked into #{cell.inspect}"
+      end
     end
 
     test "every cell's rules are its own, and nothing else's" do

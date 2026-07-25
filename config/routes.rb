@@ -7,8 +7,17 @@ Concierge::Engine.routes.draw do
     post :message, on: :member
   end
 
+  # The inbound approval-intake seam (design §10.7). Two endpoints, because a real
+  # Slack app needs both: events for the URL handshake and case-thread replies,
+  # interactivity for the button that says who clicked it.
+  post "slack/events",       to: "slack#events",       as: :slack_events
+  post "slack/interactions", to: "slack#interactions",  as: :slack_interactions
+
   namespace :admin do
     resources :agents, only: [ :index ]
+    # "slack" is uncountable, so a resources declaration would name this
+    # admin_slack_index_path. It is one screen; give it the obvious helper.
+    get "slack", to: "slack#index", as: :slack
     resources :memories, only: [ :index, :update, :destroy ]
     resources :rules, only: [ :index, :update ]
     resources :proposals, only: [ :index, :update ]

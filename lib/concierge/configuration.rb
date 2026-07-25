@@ -109,6 +109,24 @@ module Concierge
     # proposal — the same rule as rule_proposal_notifier.
     attr_accessor :proposal_notifier
 
+    # The inbound approval-intake seam's Slack adapter (§10.7). A block, because
+    # it carries a signing secret, a bot token, one channel per agent and the
+    # anti-noise caps:
+    #
+    #   config.slack do
+    #     signing_secret ENV["SLACK_SIGNING_SECRET"]
+    #     channel :billing, "C0BILLING"
+    #   end
+    #
+    # Configured or not, nothing else changes: an un-Slacked host's proposals wait
+    # on /concierge/admin/proposals exactly as before, which is what makes Slack a
+    # remote control rather than the record.
+    def slack(&block)
+      @slack ||= Slack::Settings.new
+      @slack.instance_eval(&block) if block
+      @slack
+    end
+
     # --- Admin surface (Phase 9) ---
 
     # Callable(controller) -> truthy to permit admin access. Nil = deny (the admin

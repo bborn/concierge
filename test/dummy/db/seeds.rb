@@ -6,7 +6,7 @@
 
 require "securerandom"
 
-[ Concierge::Memory, Concierge::Routine, Concierge::ChannelDelivery,
+[ Concierge::SlackCard, Concierge::Memory, Concierge::Routine, Concierge::ChannelDelivery,
   Concierge::Handoff, Concierge::OutreachPreference, Concierge::Conversation,
   Concierge::AgentProposal, Concierge::BudgetLedger, Concierge::AgentRuleRevision,
   Concierge::AgentRule, Concierge::AgentRun, User, Tenant ].each(&:delete_all)
@@ -267,4 +267,8 @@ puts "Memory namespaces: #{Concierge::Memory.group(:agent_slug).count.sort.map {
 puts "Rules: #{Concierge::AgentRule.active.count} active, " \
      "#{Concierge::AgentRule.proposed.count} awaiting a human tap " \
      "(cap #{Concierge::Rules.cap} per scope). #{Concierge::AgentRun.count} runs recorded."
+puts "Slack cards: #{Concierge::SlackCard.posted.count} posted, " \
+     "#{Concierge::SlackCard.suppressed.count} suppressed by the daily cap " \
+     "(#{Concierge.config.slack.daily_card_cap}/agent/day) — see /concierge/admin/slack. " \
+     "Every one of them is decidable in the admin queue too."
 puts "Unsubscribe link to try: /concierge/unsubscribe/#{Concierge::ChannelDelivery.last.unsubscribe_token}"
