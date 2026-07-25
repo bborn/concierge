@@ -4,15 +4,27 @@ module Concierge
   class Result
     attr_reader :reply_text, :tool_calls, :input_tokens, :output_tokens, :model, :error
 
+    # The rules the agent said it applied, and the ones it cited that were never
+    # in its prompt (design §10.4). +rule_ids_applied+ is the model's claim;
+    # +unknown_rule_ids+ is that claim cross-checked against what we injected.
+    attr_reader :rule_ids_applied, :unknown_rule_ids
+
+    # The provenance row written for this run, when one was.
+    attr_reader :run_record
+
     def initialize(reply_text: nil, tool_calls: [], input_tokens: nil,
-                   output_tokens: nil, model: nil, error: nil, suppressed: false)
-      @reply_text    = reply_text
-      @tool_calls    = tool_calls || []
-      @input_tokens  = input_tokens
-      @output_tokens = output_tokens
-      @model         = model
-      @error         = error
-      @suppressed    = suppressed
+                   output_tokens: nil, model: nil, error: nil, suppressed: false,
+                   rule_ids_applied: [], unknown_rule_ids: [], run_record: nil)
+      @reply_text       = reply_text
+      @tool_calls       = tool_calls || []
+      @input_tokens     = input_tokens
+      @output_tokens    = output_tokens
+      @model            = model
+      @error            = error
+      @suppressed       = suppressed
+      @rule_ids_applied = rule_ids_applied || []
+      @unknown_rule_ids = unknown_rule_ids || []
+      @run_record       = run_record
     end
 
     def self.failure(error, model: nil)

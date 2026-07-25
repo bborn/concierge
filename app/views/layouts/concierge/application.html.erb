@@ -11,6 +11,12 @@
 </head>
 <body>
 
+<% if flash[:notice].present? || flash[:alert].present? %>
+  <p class="concierge-flash <%= flash[:alert].present? ? 'concierge-flash--alert' : '' %>">
+    <%= flash[:alert].presence || flash[:notice] %>
+  </p>
+<% end %>
+
 <%= yield %>
 
 </body>

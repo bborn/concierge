@@ -124,6 +124,86 @@ Two things stay deliberately per-*customer* rather than per-agent, because the
 customer has one inbox: outreach preferences (opt-out, quiet hours, cadence) and
 the frequency cap and per-tenant token budget that read across every agent.
 
+## Memory vs. rules
+
+Two different things used to live in `concierge_memories`, and they behave
+differently, so they are two tables:
+
+| | **Memory** | **Rule** |
+|---|---|---|
+| what it is | an episodic fact about one relationship | a generalized instruction about how to behave |
+| example | *"Renewal is in March."* | *"Never promise a delivery date without checking the API."* |
+| scope | (agent, account) | (agent) &times; optionally a segment or one account |
+| lifecycle | write, pin, retire | `proposed` &rarr; `active` &rarr; `deprecated`, versioned |
+| who can create it | the agent, a tool, a human | anyone may **propose** |
+| who can put it in force | whoever wrote it | **only a human, and never its own author** |
+
+A rule reaches a run through a Playbook section of the prompt, rendered with its
+id and version so the agent can cite what it applied:
+
+```
+Playbook — the rules in force here. A human approved each one; ...
+- [rule 12 v2] Never promise a delivery date; point them at the status page.
+- [rule 31 v1] Acme's CEO is skeptical of AI tooling — keep the tone low-key.
+```
+
+### The write path
+
+A human correction is stored **verbatim** as memory, and — when it reads as an
+instruction rather than a fact — an out-of-band job drafts a rule from it,
+conflict-checks it against what is already in force, and leaves it `proposed`:
+
+```ruby
+Concierge::Learning.capture(scope, content: "Never quote a delivery date without checking.")
+# => verbatim memory + a RuleGeneralizerJob -> a proposed rule, waiting
+
+Concierge::Rules.activate!(rule, by: "sam@acme.test")   # the human tap
+```
+
+The gate is structural, not conventional. `Rules.activate!` refuses an actor
+prefixed `agent:` (which is how the engine's own jobs author), refuses the rule's
+own author, refuses while a flagged conflict is unresolved, and refuses at the
+per-scope **active-rule cap** — with the rules to consolidate named in the error.
+Hitting the cap *blocks*; it never silently drops rules from a prompt.
+
+Hosts can plug in their own drafting pass and their own card destination:
+
+```ruby
+config.active_rule_cap        = 12                       # per scope; nil = default
+config.rule_generalizer       = ->(correction) { ... }   # LLM-backed if you like
+config.rule_proposal_notifier = ->(rule) { Slack.post_card(rule) }
+config.segments_for           = ->(subject) { subject[:region] == "eu" ? ["eu"] : [] }
+config.admin_actor            = ->(controller) { controller.current_user.email }
+```
+
+A rule with `enforcement: "guard"` carries a declarative `predicate` the engine
+checks itself, so the policy holds whether or not the model followed it:
+
+```ruby
+predicate: { "action_class" => "message.outreach",
+             "deny_when"    => { "body" => { "matches" => "guarantee" } } }
+```
+
+### Provenance
+
+Every completed run writes a `concierge_agent_runs` row: the memory ids and rule
+`(id, version)` pairs that were in the prompt, the snapshot digest it reasoned
+over, the model and tokens, and the rule ids the agent *claimed* to apply —
+cross-checked against what was actually injected. Because rules keep an
+append-only revision trail, a pinned version still resolves to the exact text
+that was in force, even after the rule has been rewritten. Browse it at
+`/concierge/admin/runs`; approve or retire rules at `/concierge/admin/rules`.
+
+A weekly `Concierge::RuleDreamingJob` proposes consolidations and retirements
+with evidence (a rule injected into N prompts and never once cited, two rules
+that say the same thing, a rule already superseded). It only ever proposes.
+
+Provenance is real write volume — one row per run. Prune on your own cadence:
+
+```ruby
+Concierge::AgentRun.prune!(older_than: 90.days)
+```
+
 ## Using it
 
 Reactive (a customer message → a reply):
@@ -158,8 +238,9 @@ per-message approval gate, bounded by frequency caps, quiet hours, per-subject
 opt-out, and one-click unsubscribe. Control is **human takeover**, not gating —
 seize any thread via the handoff endpoints; while a human holds it, autonomous
 proactive sends are suppressed and the operator's messages are captured as
-high-confidence memory that steers future runs. Takeover is per (agent,
-account), so holding the disputes thread does not silence the CSM.
+high-confidence memory that steers future runs — and, when they read as an
+instruction, as a proposed rule for a human to approve (see above). Takeover is
+per (agent, account), so holding the disputes thread does not silence the CSM.
 
 Per-agent authority is the general form (see `authority` above). The older
 global `config.draft_and_review = true` still works and still only *tightens*:
@@ -170,7 +251,10 @@ it routes every agent's sends to the outbox for human approval.
 Every tool and query is scoped to the current **(agent, account)** pair — a tool
 can never reach another account's data, nor another agent's notes about the same
 account. Write tools are grant-gated. Prompt injection is mitigated by
-least-privilege grants, an audit log, and fast human takeover. `RubyLLM.context`
+least-privilege grants, an audit log, and fast human takeover — and by the rule
+gate: nothing the model or a customer says can put a behavioral instruction into
+force, because activation requires a human who is not the author. Guard-rule
+predicates are declarative data, never evaluated as code. `RubyLLM.context`
 isolates per-tenant credentials; data isolation is enforced by the gem.
 
 ## Out of scope (v1)

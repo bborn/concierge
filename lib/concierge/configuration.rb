@@ -67,11 +67,43 @@ module Concierge
     attr_accessor :weekly_review_enabled
     attr_accessor :weekly_review_instruction
 
+    # --- Rules (Phase 10, §10.2) ---
+
+    # How many `active` rules may be in force for one scope at once. Hitting the
+    # cap *blocks* activation and demands a consolidation — it never silently
+    # truncates the rule set. Nil uses Concierge::Rules::DEFAULT_ACTIVE_CAP.
+    attr_accessor :active_rule_cap
+
+    # Optional callable(correction_text) -> String | Hash that drafts a rule body
+    # from a human correction. The default is lexical and deterministic (first
+    # concern, normalized), which is what keeps the whole write path runnable with
+    # no model and no network; this is the seam where a host puts a real
+    # generalization pass. It drafts only — nothing here can activate a rule.
+    attr_accessor :rule_generalizer
+
+    # Optional callable(rule) invoked when a rule proposal (or a retirement
+    # proposal) is created, so a host can post the card wherever its humans are —
+    # Slack Block Kit, email, an internal queue. Without one the card still lives
+    # on /concierge/admin/rules, so this is optional rather than a required
+    # dependency on a chat transport. A raising notifier never loses the rule.
+    attr_accessor :rule_proposal_notifier
+
+    # Optional callable(subject) -> [segment names] naming the segments an account
+    # belongs to, so a rule can apply to "EU accounts" without naming each one.
+    # Without it there are no segments and segment-scoped rules never apply.
+    attr_accessor :segments_for
+
     # --- Admin surface (Phase 9) ---
 
     # Callable(controller) -> truthy to permit admin access. Nil = deny (the admin
     # fails closed rather than shipping an open dashboard).
     attr_accessor :authenticate_admin
+
+    # Callable(controller) -> the identity of the human driving the admin, used as
+    # the approver when a rule is activated. The engine cannot know the host's
+    # session shape, so it asks. Without it, the maker-checker gate refuses rather
+    # than inventing an approver.
+    attr_accessor :admin_actor
 
     def initialize
       @chat_model_name  = "Chat"

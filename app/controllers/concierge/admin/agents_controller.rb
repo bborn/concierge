@@ -11,6 +11,8 @@ module Concierge
         @routines    = Concierge::Routine.group(:agent_slug).count
         @deliveries  = Concierge::ChannelDelivery.group(:agent_slug).count
         @conversations = Concierge::Conversation.group(:agent_slug).count
+        @rules         = Concierge::AgentRule.active.group(:agent_slug).count
+        @proposals     = Concierge::AgentRule.proposed.group(:agent_slug).count
       end
     end
   end

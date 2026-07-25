@@ -55,6 +55,16 @@
         <td><code><%= agent.memory_namespace %></code></td>
       </tr>
       <tr>
+        <th>Rules in force</th>
+        <td>
+          <%= link_to pluralize(@rules.fetch(agent.memory_namespace, 0), "active rule"), admin_rules_path %>
+          of <%= Concierge::Rules.cap %> allowed
+          <% if @proposals.fetch(agent.memory_namespace, 0).positive? %>
+            &middot; <strong><%= @proposals.fetch(agent.memory_namespace, 0) %> awaiting a human tap</strong>
+          <% end %>
+        </td>
+      </tr>
+      <tr>
         <th>Kill switch</th>
         <td><%= agent.enabled? ? "enabled" : "DISABLED — runs are suppressed" %></td>
       </tr>

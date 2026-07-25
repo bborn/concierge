@@ -37,6 +37,25 @@ Rails.application.config.to_prepare do
     # so allow it in development only — a host app would check its own session.
     c.authenticate_admin = ->(_controller) { Rails.env.development? }
 
+    # Who is tapping Approve on a rule proposal. A real host returns
+    # current_user.email; without this hook the maker-checker gate refuses rather
+    # than inventing an approver (design §10.2).
+    c.admin_actor = ->(_controller) { "operator@acme.test" }
+
+    # Named segments a rule can target, so "for EU accounts, cite the DPA" does not
+    # have to be written out per account.
+    c.segments_for = ->(subject) { subject[:plan] == "enterprise" ? [ "enterprise" ] : [] }
+
+    # Rules are drafted from human corrections by a deterministic generalizer
+    # unless a host replaces it (`c.rule_generalizer`). Left at the default here so
+    # the dummy app needs no model to exercise the write path.
+    #
+    # Where a proposal card gets posted is the host's call; without a notifier the
+    # card still lives on /concierge/admin/rules.
+    c.rule_proposal_notifier = lambda do |rule|
+      Rails.logger.info("[dummy] rule ##{rule.id} proposed for #{rule.agent_slug}: #{rule.body}")
+    end
+
     c.weekly_review_enabled     = true
     c.weekly_review_instruction = "Review this account and reach out if something is worth their attention."
     c.priority = ->(subject) { subject[:plan] == "enterprise" ? 100 : 1 }

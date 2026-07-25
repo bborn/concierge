@@ -5,8 +5,8 @@ module Concierge
   # decides WHERE, the channel does the send, and we audit the result against the
   # agent that sent it.
   #
-  # Returns a status symbol: :delivered, :drafted, :suppressed, :no_channel, or
-  # :failed.
+  # Returns a status symbol: :delivered, :drafted, :suppressed, :blocked_by_rule,
+  # :no_channel, or :failed.
   class Outreach
     def self.deliver(result, scope, channel: nil, kind: "outreach", governance: Governance.new)
       new(result, scope, channel: channel, kind: kind, governance: governance).deliver
@@ -24,6 +24,7 @@ module Concierge
       payload = build_payload
       return :suppressed unless @governance.usefulness_ok?(payload)
       return :suppressed unless @governance.allow?(@scope, kind: @kind)
+      return :blocked_by_rule unless guards_clear?(payload)
 
       # Slot 4 — the authority envelope (§10.5). Anything short of :autonomous on
       # the message action class stages the send for a human instead of sending
@@ -52,6 +53,25 @@ module Concierge
 
     def subject
       @scope.subject
+    end
+
+    # A rule that graduated to +enforcement: "guard"+ is checked by the engine,
+    # not left to the model's discretion (design §10.2). This is the one action
+    # class the engine dispatches itself today; §10.6's Proposal::Execute re-checks
+    # the same predicates for host-registered executors.
+    #
+    # Nothing is guarded unless a human activated a guard rule with a predicate,
+    # so this is inert on a host that has none.
+    def guards_clear?(payload)
+      violated = Rules.guard_violations(@scope, action_class: Authority::MESSAGE_OUTREACH,
+                                                payload: payload)
+      return true if violated.empty?
+
+      Concierge.logger&.info(
+        "[concierge] #{@scope.agent_slug} send blocked by guard rule(s) " \
+        "#{violated.map(&:id).join(', ')} for #{subject.grain}##{subject.id}"
+      )
+      false
     end
 
     # The legacy global +draft_and_review+ only ever tightens. It is sugar for
