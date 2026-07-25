@@ -112,61 +112,56 @@
   <% end %>
 <% end %>
 
-<h2>Approved — waiting for a human to perform (<%= @waiting_on_a_human_to_perform.size %>)</h2>
+<h2>Approved — not performed yet (<%= @unexecuted.count %>)</h2>
 
 <p>
   A <code>human_execution</code> gate means the engine records the decision and stops.
   Money is the case this exists for: the engine never carries it out, and the host's
-  own seam re-checks its invariants independently.
+  own seam re-checks its invariants independently. The rest are approved actions the
+  engine <em>refused</em> at execution — a precondition that moved, a guard rule that
+  now blocks them, a disabled agent, an executor that raised. Nothing is retried
+  automatically: at-least-once retries of an action a human approved once is how one
+  refund becomes two.
 </p>
 
 <table>
   <thead>
-    <tr><th>Proposal</th><th>Agent</th><th>Action</th><th>Approved by</th><th></th></tr>
+    <tr>
+      <th>Proposal</th><th>Agent</th><th>Action</th><th>Gate</th>
+      <th>Approved by</th><th>Why not yet</th><th></th>
+    </tr>
   </thead>
   <tbody>
-    <% @waiting_on_a_human_to_perform.each do |proposal| %>
+    <% @unexecuted.each do |proposal| %>
       <tr>
         <td>#<%= proposal.id %></td>
         <td><%= proposal.agent_slug %></td>
         <td><code><%= proposal.action_class %></code> &middot; <%= proposal.summary %></td>
+        <td><%= proposal.gate.tr("_", " ") %></td>
         <td><%= proposal.approved_by %> at <%= proposal.approved_at %></td>
         <td>
-          <%= button_to "I performed this", admin_proposal_path(proposal), method: :patch,
-                params: { transition: "executed" } %>
+          <% if proposal.human_execution? %>
+            the engine never performs this one — you do
+          <% elsif proposal.execution_error.present? %>
+            <strong><%= proposal.execution_error %></strong>
+            <%= "(#{proposal.execution_failed_at})" if proposal.execution_failed? %>
+          <% else %>
+            approved, not yet dispatched
+          <% end %>
+        </td>
+        <td>
+          <% if proposal.human_execution? %>
+            <%= button_to "I performed this", admin_proposal_path(proposal), method: :patch,
+                  params: { transition: "executed" } %>
+          <% else %>
+            <%= button_to "Retry execution", admin_proposal_path(proposal), method: :patch,
+                  params: { transition: "retry" } %>
+          <% end %>
         </td>
       </tr>
     <% end %>
   </tbody>
 </table>
-
-<% if @failed.any? %>
-  <h2>Execution failed (<%= @failed.count %>)</h2>
-  <p>
-    Approved, attempted, and not performed. Nothing here is retried automatically —
-    at-least-once retries of an action a human approved once is how one refund
-    becomes two. Look at it, then retry.
-  </p>
-  <table>
-    <thead>
-      <tr><th>Proposal</th><th>Agent</th><th>Action</th><th>Why</th><th></th></tr>
-    </thead>
-    <tbody>
-      <% @failed.each do |proposal| %>
-        <tr>
-          <td>#<%= proposal.id %></td>
-          <td><%= proposal.agent_slug %></td>
-          <td><code><%= proposal.action_class %></code></td>
-          <td><%= proposal.execution_error %> (<%= proposal.execution_failed_at %>)</td>
-          <td>
-            <%= button_to "Retry", admin_proposal_path(proposal), method: :patch,
-                  params: { transition: "retry" } %>
-          </td>
-        </tr>
-      <% end %>
-    </tbody>
-  </table>
-<% end %>
 
 <h2>Decided</h2>
 

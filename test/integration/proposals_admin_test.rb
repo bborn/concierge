@@ -104,6 +104,24 @@ class ProposalsAdminTest < ActionDispatch::IntegrationTest
     assert_equal 0, Concierge::ChannelDelivery.count
   end
 
+  test "an approved proposal the engine refused stays visible, with why and a retry" do
+    # Found by driving the running app: an approved :human_approval proposal whose
+    # *execution* was refused is decided but unperformed. Listing only
+    # :human_execution rows and only hard failures left it in no section at all —
+    # invisible is the worst state for this screen to leave anything in.
+    proposal = staged_message
+    Concierge::OutreachPreference.for(@subject).update!(opted_out: true)
+    patch "/concierge/admin/proposals/#{proposal.id}", params: { transition: "approve" }
+    assert proposal.reload.approved?
+    refute proposal.executed?
+
+    get "/concierge/admin/proposals"
+
+    assert_includes response.body, "##{proposal.id}"
+    assert_includes response.body, "has changed since it was drafted"
+    assert_includes response.body, "Retry execution"
+  end
+
   test "a money proposal is approved on the screen and executed by the human" do
     proposal = Concierge::Proposal.propose(@billing, action_class: "money.refund",
                                                      payload: { order_id: 42, amount_cents: 2500 })

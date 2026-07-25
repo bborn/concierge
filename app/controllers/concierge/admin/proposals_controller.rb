@@ -11,11 +11,15 @@ module Concierge
     class ProposalsController < BaseController
       def index
         @awaiting = Concierge::AgentProposal.awaiting
-        @waiting_on_a_human_to_perform =
-          Concierge::AgentProposal.unexecuted.select(&:human_execution?)
-        @failed   = Concierge::AgentProposal.approved.where.not(execution_failed_at: nil)
-        @decided  = Concierge::AgentProposal.where(state: %w[executed rejected expired])
-                                            .recent.limit(50)
+
+        # Every approved row that has not happened yet, in ONE section rather than
+        # one per reason. Splitting it by gate and by "did it fail" left an
+        # approved-but-refused proposal in neither — decided, unperformed and
+        # invisible, which is the worst state for this screen to leave anything in.
+        @unexecuted = Concierge::AgentProposal.unexecuted
+
+        @decided = Concierge::AgentProposal.where(state: %w[executed rejected expired])
+                                           .recent.limit(50)
       end
 
       def update
