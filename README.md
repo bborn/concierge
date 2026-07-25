@@ -365,6 +365,50 @@ force, because activation requires a human who is not the author. Guard-rule
 predicates are declarative data, never evaluated as code. `RubyLLM.context`
 isolates per-tenant credentials; data isolation is enforced by the gem.
 
+## Try it: the Acme demo host
+
+`test/dummy` is a small but real product — **Acme**, the changelog SaaS the `:csm`
+playbook describes — with the agent living inside it.
+
+```bash
+cd test/dummy
+bin/rails db:prepare && bin/rails db:seed
+bin/rails server
+open http://localhost:3000
+```
+
+Sign in as **Dana at Acme Corp · pro** (no passwords — the picker is an account
+switcher, and switching accounts to watch what the agent knows change with you is
+the point). From there:
+
+1. **Changelog** — Acme's product. Dana has a draft and has published nothing,
+   which is exactly what the CSM's charter is about.
+2. **Kit** (bottom right) — the chat widget, posting to the engine's own
+   `POST /concierge/accounts/:subject_id/chat` with this page's CSRF token. Ask
+   "how do I publish my first changelog?"
+3. **"Kit, take a look"** (in the widget, local environments only) — runs the
+   proactive path now instead of next Monday, and reports what it decided:
+   delivered, drafted for a human, or refused by governance.
+4. **Inbox** — what the agent actually sent this account, with an unread count in
+   the header, and a link to the run provenance behind it.
+5. **Account → Request a plan change** — goes through the `:billing` agent's
+   authority envelope, so the product says *your request is with our team* while
+   an `AgentProposal` waits at `/concierge/admin/proposals`. Approve it there and
+   come back: the plan has really changed.
+6. **Account → Talk to a human** — opens a `Concierge::Handoff`; the agent
+   visibly steps back until you hand the thread back.
+
+It runs **offline**: with `ANTHROPIC_API_KEY` unset a scripted stand-in answers,
+so a keyless host still works. Export a real key and the same UI drives a real
+model over the same prompt — playbook, snapshot, memory, and the rules in force:
+
+```bash
+export ANTHROPIC_API_KEY=sk-ant-...
+cd test/dummy && bin/rails server
+```
+
+The operator's side of the same accounts is at `/concierge/admin/*`.
+
 ## Out of scope (v1)
 
 Hosted SaaS control plane; vector/semantic memory; non-Rails hosts;

@@ -1,0 +1,15 @@
+<% content_for :title, "Edit entry · Acme" %>
+
+<div class="page__head">
+  <div>
+    <h1>Edit entry</h1>
+    <p class="lede"><span class="pill"><%= @entry.status %></span></p>
+  </div>
+  <% unless @entry.published? %>
+    <%= button_to "Publish", publish_changelog_entry_path(@entry),
+                  class: "btn btn--primary", form_class: "inline-form" %>
+  <% end %>
+</div>
+
+<%= render "form", entry: @entry, url: changelog_entry_path(@entry), method: :patch,
+                   submit_label: "Save changes" %>

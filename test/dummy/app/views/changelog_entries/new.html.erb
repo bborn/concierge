@@ -1,0 +1,11 @@
+<% content_for :title, "New entry · Acme" %>
+
+<div class="page__head">
+  <div>
+    <h1>New changelog entry</h1>
+    <p class="lede">Save it as a draft, publish when you're ready.</p>
+  </div>
+</div>
+
+<%= render "form", entry: @entry, url: changelog_entries_path, method: :post,
+                   submit_label: "Save draft" %>

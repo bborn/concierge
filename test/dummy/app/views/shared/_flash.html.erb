@@ -1,0 +1,17 @@
+<% if flash[:notice].present? %>
+  <p class="flash">
+    <%= flash[:notice] %>
+    <% if flash[:agent_run_id].present? %>
+      —
+      <%# Provenance: exactly what that run was told, at the versions it was told
+          it. The link is the point — "the agent decided X" is only worth
+          anything if you can go and read what it was decided from. %>
+      <%= link_to "see what #{csm_persona&.name || 'the agent'} was told (run ##{flash[:agent_run_id]})",
+                  concierge.admin_runs_path %>
+    <% end %>
+  </p>
+<% end %>
+
+<% if flash[:alert].present? %>
+  <p class="flash flash--alert"><%= flash[:alert] %></p>
+<% end %>

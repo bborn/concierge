@@ -1,0 +1,174 @@
+<%# The agent, living inside the product. Posts straight to the engine's own
+    endpoint — POST /concierge/accounts/:subject_id/chat — with the CSRF token
+    this page rendered, which is the pairing that could not be exercised before
+    the host shipped a widget.
+
+    Shown by persona name, never as "Concierge": the engine is plumbing; Kit is
+    who the customer is talking to. %>
+<div class="kit"
+     data-open="false"
+     data-chat-url="<%= concierge.chat_path(subject_id: current_tenant.id) %>"
+     data-activity-url="<%= agent_activity_path(agent: :csm) %>"
+     data-agent="csm">
+
+  <div class="kit__panel">
+    <div class="kit__head">
+      <span class="avatar"><%= (csm_persona&.name || "A").first %></span>
+      <div>
+        <div class="kit__name"><%= csm_persona&.name || "Assistant" %></div>
+        <div class="kit__role">Acme customer success</div>
+      </div>
+      <button type="button" class="btn btn--ghost btn--small kit__close" data-kit-close>Close</button>
+    </div>
+
+    <div class="kit__log" data-kit-log>
+      <%# One line each: the bubble is white-space: pre-wrap so the dynamic ones
+          keep the model's own line breaks, which means ERB indentation would
+          show up as indentation. %>
+      <% if handoff_active? %>
+        <p class="bubble bubble--agent"><%= csm_persona&.name || "Your agent" %> has stepped back — someone from our team has this conversation.</p>
+      <% else %>
+        <p class="bubble bubble--agent">Hi <%= current_user.display_name %> — I'm <%= csm_persona&.name || "your assistant" %>. Ask me anything about publishing your changelog.</p>
+      <% end %>
+    </div>
+
+    <% if handoff_active? %>
+      <p class="kit__notice">
+        <strong>A person has this thread.</strong>
+        <%= csm_persona&.name || "Your agent" %> has stepped back and will not reach out while
+        <%= handoff.operator %> is on it.
+        <%= button_to "Hand it back", handoff_path, method: :delete,
+                      class: "btn btn--small", form_class: "inline-form" %>
+      </p>
+    <% else %>
+      <form class="kit__composer" data-kit-form>
+        <input type="text" name="message" placeholder="Ask <%= csm_persona&.name || 'us' %> something…"
+               autocomplete="off" data-kit-input aria-label="Message">
+        <button type="submit" class="btn btn--primary" data-kit-send>Send</button>
+      </form>
+    <% end %>
+
+    <div class="kit__foot">
+      <% unless handoff_active? %>
+        <%= button_to "Talk to a human", handoff_path, method: :post,
+                      class: "btn btn--small", form_class: "inline-form" %>
+      <% end %>
+
+      <% if Rails.env.local? %>
+        <%# Not a product feature — a demo affordance. The proactive path runs
+            weekly; waiting a week is not a demo. %>
+        <%= button_to "#{csm_persona&.name || 'Agent'}, take a look", agent_review_path,
+                      method: :post, class: "btn btn--small", form_class: "inline-form" %>
+      <% end %>
+    </div>
+  </div>
+
+  <button type="button" class="kit__launcher" data-kit-open>
+    <%= csm_persona&.name || "Chat" %>
+    <% if handoff_active? %><span class="pill pill--warn">human</span><% end %>
+  </button>
+</div>
+
+<script>
+  // Vanilla, inline, and small on purpose: the demo host ships no bundler, and
+  // the interesting part is the request it makes, not the framework it doesn't.
+  (function () {
+    var kit = document.querySelector(".kit");
+    if (!kit) return;
+
+    var log   = kit.querySelector("[data-kit-log]");
+    var form  = kit.querySelector("[data-kit-form]");
+    var input = kit.querySelector("[data-kit-input]");
+    var send  = kit.querySelector("[data-kit-send]");
+    var token = document.querySelector("meta[name=csrf-token]");
+
+    kit.querySelector("[data-kit-open]").addEventListener("click", function () {
+      kit.dataset.open = "true";
+      if (input) input.focus();
+    });
+    kit.querySelector("[data-kit-close]").addEventListener("click", function () {
+      kit.dataset.open = "false";
+    });
+
+    function bubble(kind, text) {
+      var el = document.createElement("div");
+      el.className = "bubble bubble--" + kind;
+      el.textContent = text;
+      log.appendChild(el);
+      log.scrollTop = log.scrollHeight;
+      return el;
+    }
+
+    function renderTools(calls) {
+      if (!calls || !calls.length) return;
+      var wrap = document.createElement("div");
+      wrap.className = "tools";
+      calls.forEach(function (call) {
+        var chip = document.createElement("span");
+        chip.className = "tool";
+        chip.textContent = "⚙ " + call.name;
+        wrap.appendChild(chip);
+      });
+      log.appendChild(wrap);
+      log.scrollTop = log.scrollHeight;
+    }
+
+    // The chat endpoint answers with the final assistant message. A real model's
+    // tool calls happened on the messages before it and were persisted by
+    // acts_as_chat, so they are read back from the host's own tables.
+    function showToolCalls() {
+      return fetch(kit.dataset.activityUrl, { headers: { Accept: "application/json" } })
+        .then(function (r) { return r.ok ? r.json() : { tool_calls: [] }; })
+        .then(function (data) { renderTools(data.tool_calls); })
+        .catch(function () { /* activity is a nicety; never break the reply on it */ });
+    }
+
+    if (form) {
+      form.addEventListener("submit", function (event) {
+        event.preventDefault();
+        var message = input.value.trim();
+        if (!message) return;
+
+        bubble("user", message);
+        input.value = "";
+        send.disabled = true;
+        var pending = bubble("agent", "…");
+
+        fetch(kit.dataset.chatUrl, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Accept": "application/json",
+            "X-CSRF-Token": token ? token.content : ""
+          },
+          credentials: "same-origin",
+          body: JSON.stringify({ message: message, agent: kit.dataset.agent })
+        })
+          .then(function (response) {
+            return response.json().then(function (data) { return { ok: response.ok, data: data }; });
+          })
+          .then(function (result) {
+            pending.remove();
+            if (result.ok) {
+              bubble("agent", result.data.reply);
+              return showToolCalls();
+            }
+            bubble("error", result.data.error || "Something went wrong.");
+          })
+          .catch(function () {
+            pending.remove();
+            bubble("error", "Could not reach the assistant.");
+          })
+          .then(function () {
+            send.disabled = false;
+            input.focus();
+          });
+      });
+    }
+
+    var switcher = document.querySelector("form[data-switcher] select");
+    if (switcher) {
+      switcher.addEventListener("change", function () { switcher.form.submit(); });
+    }
+  })();
+</script>

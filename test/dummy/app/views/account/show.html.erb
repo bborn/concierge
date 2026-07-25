@@ -1,0 +1,153 @@
+<% content_for :title, "Account · Acme" %>
+
+<div class="page__head">
+  <div>
+    <h1><%= current_tenant.name %></h1>
+    <p class="lede">Signed in as <%= current_user.email %></p>
+  </div>
+  <span class="pill pill--accent"><%= current_tenant.plan %></span>
+</div>
+
+<div class="grid">
+  <div class="card">
+    <div class="stat"><%= @entries_count %></div>
+    <div class="stat__label">changelog entries published</div>
+  </div>
+  <div class="card">
+    <div class="stat"><%= current_tenant.users.count %></div>
+    <div class="stat__label">seats</div>
+  </div>
+  <div class="card">
+    <div class="stat"><%= inbox.items.count %></div>
+    <div class="stat__label">messages from your team</div>
+  </div>
+</div>
+
+<%# --- The gated path, from the customer's side -------------------------- %>
+<div class="card card--flush">
+  <div class="card__head">
+    <h2>Plan</h2>
+    <span class="pill"><%= current_tenant.plan %></span>
+  </div>
+
+  <div class="card__row">
+    <% if @pending_plan_change %>
+      <p>
+        <strong>Your request is with our team.</strong>
+        You asked to move from <%= @pending_plan_change.action_arguments[:from] %> to
+        <strong><%= @pending_plan_change.action_arguments[:to] %></strong>
+        <%= time_ago_in_words(@pending_plan_change.created_at) %> ago.
+        <%= billing_persona&.name || "Billing" %> can't make that change on its own, so a
+        person has to approve it.
+      </p>
+      <p class="faint">
+        Waiting as proposal #<%= @pending_plan_change.id %>
+        (<span class="mono"><%= @pending_plan_change.action_class %></span>,
+        gate <span class="mono"><%= @pending_plan_change.gate %></span>) in the
+        <%= link_to "approval queue", concierge.admin_proposals_path %>.
+      </p>
+    <% else %>
+      <% if @plan_change&.executed? %>
+        <p>
+          <strong>Approved.</strong>
+          <%= @plan_change.approved_by %> approved your move to
+          <%= @plan_change.action_arguments[:to] %>
+          <%= time_ago_in_words(@plan_change.executed_at) %> ago, and your plan changed to
+          <strong><%= current_tenant.plan %></strong>.
+        </p>
+      <% elsif @plan_change&.rejected? %>
+        <p>
+          <strong>Declined.</strong>
+          <%= @plan_change.rejected_by %> declined your last request —
+          “<%= @plan_change.rejected_reason %>”.
+        </p>
+      <% end %>
+
+      <p class="muted">
+        Plan changes go through our team. Asking here puts it in front of a human;
+        nothing changes until they approve it.
+      </p>
+
+      <%= form_with url: plan_change_path, method: :post, class: "actions" do %>
+        <select name="plan" aria-label="Requested plan">
+          <% (Tenant::PLANS - [ current_tenant.plan ]).each do |plan| %>
+            <option value="<%= plan %>"><%= plan %></option>
+          <% end %>
+        </select>
+        <button type="submit" class="btn btn--primary">Request a plan change</button>
+      <% end %>
+    <% end %>
+  </div>
+</div>
+
+<%# --- Who is working this account --------------------------------------- %>
+<div class="card card--flush">
+  <div class="card__head"><h2>Your team</h2></div>
+
+  <div class="card__row msg">
+    <span class="avatar"><%= (csm_persona&.name || "A").first %></span>
+    <div class="msg__body">
+      <div class="msg__head">
+        <span class="msg__who"><%= csm_persona&.name || "Your agent" %></span>
+        <span class="faint">customer success</span>
+        <% if handoff_active? %>
+          <span class="pill pill--warn">stepped back</span>
+        <% else %>
+          <span class="pill pill--good">on</span>
+        <% end %>
+      </div>
+      <% if handoff_active? %>
+        <p class="muted">
+          <%= handoff.operator %> has taken this conversation over.
+          <%= csm_persona&.name || "Your agent" %> has stepped back and will not reach out
+          until it's handed back.
+        </p>
+        <%= button_to "Hand the thread back to #{csm_persona&.name || 'the agent'}",
+                      handoff_path, method: :delete, class: "btn", form_class: "inline-form" %>
+      <% else %>
+        <p class="muted"><%= csm_persona&.voice %>. Reaches out on its own within caps.</p>
+        <%= button_to "Talk to a human", handoff_path, method: :post,
+                      class: "btn", form_class: "inline-form" %>
+      <% end %>
+    </div>
+  </div>
+
+  <div class="card__row msg">
+    <span class="avatar avatar--billing"><%= (billing_persona&.name || "B").first %></span>
+    <div class="msg__body">
+      <div class="msg__head">
+        <span class="msg__who"><%= billing_persona&.name || "Billing" %></span>
+        <span class="faint">billing</span>
+        <span class="pill">every action needs a human</span>
+      </div>
+      <p class="muted">
+        <%= billing_persona&.voice %>. It can propose a plan change or a refund; it can
+        never perform one.
+      </p>
+    </div>
+  </div>
+</div>
+
+<% if @routines.any? %>
+  <div class="card card--flush">
+    <div class="card__head"><h2>Scheduled check-ins</h2></div>
+    <% @routines.each do |routine| %>
+      <div class="card__row">
+        <div class="msg__head">
+          <span class="mono"><%= routine.schedule %></span>
+          <span class="pill"><%= routine.author %></span>
+          <% unless routine.enabled %><span class="pill pill--warn">paused</span><% end %>
+        </div>
+        <div class="muted"><%= routine.instruction %></div>
+      </div>
+    <% end %>
+  </div>
+<% end %>
+
+<p class="faint">
+  The operator's side of all of this:
+  <%= link_to "proposals", concierge.admin_proposals_path %> ·
+  <%= link_to "memory", concierge.admin_memories_path %> ·
+  <%= link_to "rules", concierge.admin_rules_path %> ·
+  <%= link_to "runs", concierge.admin_runs_path %>.
+</p>

@@ -1,0 +1,34 @@
+<header class="topbar">
+  <div class="topbar__inner">
+    <%= link_to root_path, class: "brand" do %>
+      <span class="brand__mark">A</span> Acme
+    <% end %>
+
+    <nav class="nav">
+      <%= link_to "Changelog", changelog_entries_path,
+                  "aria-current": ("page" if controller_name == "changelog_entries") %>
+      <%= link_to inbox_path, "aria-current": ("page" if controller_name == "inbox") do %>
+        Inbox<%= tag.span(inbox.unread_count, class: "badge") if inbox.unread_count.positive? %>
+      <% end %>
+      <%= link_to "Account", account_path,
+                  "aria-current": ("page" if controller_name == "account") %>
+    </nav>
+
+    <div class="whoami">
+      <%# The account switcher. Switching accounts and watching what the agent
+          knows change with you IS the demo, so it is one control away at all
+          times rather than buried on a settings page. %>
+      <%= form_with url: signin_path, method: :post, data: { switcher: true } do %>
+        <select name="user_id" aria-label="Switch account">
+          <% User.includes(:tenant).order(:tenant_id, :email).each do |user| %>
+            <option value="<%= user.id %>" <%= "selected" if user.id == current_user.id %>>
+              <%= user.label %>
+            </option>
+          <% end %>
+        </select>
+        <noscript><button class="btn btn--small" type="submit">Switch</button></noscript>
+      <% end %>
+      <%= button_to "Sign out", signout_path, method: :delete, class: "btn btn--ghost btn--small" %>
+    </div>
+  </div>
+</header>

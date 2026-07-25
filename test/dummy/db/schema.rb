@@ -10,7 +10,21 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_07_25_150201) do
+ActiveRecord::Schema[8.1].define(version: 2026_07_26_090000) do
+  create_table "changelog_entries", force: :cascade do |t|
+    t.integer "author_id"
+    t.text "body"
+    t.datetime "created_at", null: false
+    t.datetime "published_at"
+    t.string "status", default: "draft", null: false
+    t.integer "tenant_id", null: false
+    t.string "title", null: false
+    t.datetime "updated_at", null: false
+    t.index ["author_id"], name: "index_changelog_entries_on_author_id"
+    t.index ["tenant_id", "status"], name: "index_changelog_entries_on_tenant_id_and_status"
+    t.index ["tenant_id"], name: "index_changelog_entries_on_tenant_id"
+  end
+
   create_table "chats", force: :cascade do |t|
     t.datetime "created_at", null: false
     t.integer "model_id"
@@ -227,6 +241,17 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_25_150201) do
     t.index ["channel_id", "thread_ts"], name: "index_concierge_slack_cards_on_thread"
   end
 
+  create_table "inbox_messages", force: :cascade do |t|
+    t.text "body"
+    t.datetime "created_at", null: false
+    t.string "delivery_token", null: false
+    t.datetime "read_at"
+    t.integer "tenant_id", null: false
+    t.datetime "updated_at", null: false
+    t.index ["delivery_token"], name: "index_inbox_messages_on_delivery_token", unique: true
+    t.index ["tenant_id"], name: "index_inbox_messages_on_tenant_id"
+  end
+
   create_table "messages", force: :cascade do |t|
     t.integer "cache_creation_tokens"
     t.integer "cached_tokens"
@@ -298,7 +323,10 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_25_150201) do
     t.index ["tenant_id"], name: "index_users_on_tenant_id"
   end
 
+  add_foreign_key "changelog_entries", "tenants"
+  add_foreign_key "changelog_entries", "users", column: "author_id"
   add_foreign_key "chats", "models"
+  add_foreign_key "inbox_messages", "tenants"
   add_foreign_key "messages", "chats"
   add_foreign_key "messages", "models"
   add_foreign_key "messages", "tool_calls"
