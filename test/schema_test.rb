@@ -8,7 +8,7 @@ module Concierge
     AGENT_KEYED = [
       Concierge::Memory, Concierge::Conversation, Concierge::Routine,
       Concierge::ChannelDelivery, Concierge::BudgetLedger, Concierge::Handoff,
-      Concierge::OutboxItem, Concierge::AgentRule, Concierge::AgentRun
+      Concierge::AgentProposal, Concierge::AgentRule, Concierge::AgentRun
     ].freeze
 
     test "every per-agent table carries a non-null agent_slug" do

@@ -48,6 +48,22 @@
           <% agent.authority.actions.each do |action_class, level| %>
             &middot; <%= action_class %> <%= level %>
           <% end %>
+          <% if Concierge.config.draft_and_review %>
+            <br>the legacy <code>draft_and_review</code> flag is on, so
+            <code>message.outreach</code> gates to
+            <strong><%= agent.level_for(Concierge::Authority::MESSAGE_OUTREACH) %></strong>
+          <% end %>
+        </td>
+      </tr>
+      <tr>
+        <th>Proposals</th>
+        <td>
+          <% if @actions.fetch(agent.memory_namespace, 0).positive? %>
+            <strong><%= link_to pluralize(@actions.fetch(agent.memory_namespace, 0), "action"),
+                                admin_proposals_path %> awaiting approval</strong>
+          <% else %>
+            nothing staged for a human
+          <% end %>
         </td>
       </tr>
       <tr>

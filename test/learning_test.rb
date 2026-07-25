@@ -40,7 +40,7 @@ module Concierge
       status = Outreach.deliver(Concierge::Result.new(reply_text: "a proactive nudge"), @subject, channel: :in_app)
 
       assert_equal :drafted, status
-      assert_equal 1, OutboxItem.for_subject(@subject).pending.count
+      assert_equal 1, AgentProposal.for_subject(@subject).proposed.count
       assert_equal 0, ChannelDelivery.count
     end
 
@@ -60,7 +60,7 @@ module Concierge
       assert_equal :autonomous, Concierge.config.agent(:csm).authority.level_for("message.outreach")
       assert_equal :drafted,
                    Outreach.deliver(Concierge::Result.new(reply_text: "a nudge"), scope, channel: :in_app)
-      assert_equal 1, OutboxItem.for_scope(scope).pending.count
+      assert_equal 1, AgentProposal.for_scope(scope).proposed.count
     end
   end
 end

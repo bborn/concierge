@@ -13,6 +13,7 @@ module Concierge
         @conversations = Concierge::Conversation.group(:agent_slug).count
         @rules         = Concierge::AgentRule.active.group(:agent_slug).count
         @proposals     = Concierge::AgentRule.proposed.group(:agent_slug).count
+        @actions       = Concierge::AgentProposal.proposed.group(:agent_slug).count
       end
     end
   end

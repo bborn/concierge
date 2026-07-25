@@ -244,7 +244,57 @@ per (agent, account), so holding the disputes thread does not silence the CSM.
 
 Per-agent authority is the general form (see `authority` above). The older
 global `config.draft_and_review = true` still works and still only *tightens*:
-it routes every agent's sends to the outbox for human approval.
+it gates every agent's sends to human approval.
+
+## Proposals — actions an agent may not perform itself
+
+An agent's authority envelope names three levels per action class:
+`:autonomous` (do it, within caps), `:human_approval` (propose it; a human
+approves and **the engine** executes), and `:human_execution` (propose it; a
+human approves **and performs it**). Anything short of `:autonomous` becomes a
+`Concierge::AgentProposal` waiting on `/concierge/admin/proposals` — an outbound
+message from a gated agent, a CRM update, a refund. All one object.
+
+```ruby
+Concierge::ApprovalIntake.approve(proposal, by: current_user.email)
+Concierge::ApprovalIntake.reject(proposal,  by: current_user.email, reason: "wrong tone")
+Concierge::ApprovalIntake.correct(proposal, by: current_user.email, payload: { body: "…" })
+```
+
+Four properties hold whatever surface drives that seam:
+
+- **Maker-checker.** `created_by ≠ approved_by`, and an `agent:` actor can
+  propose but never approve.
+- **Execute only from an approved record.** There is no approve-and-execute call
+  that skips the row; a rejection requires a reason.
+- **Preconditions are re-validated at execution time.** The engine digests what
+  the proposal assumed and re-checks it before dispatching — a customer who opted
+  out between the draft and the approval is not messaged. Guard rules are
+  re-checked here too, so a policy activated *after* the draft still binds it.
+- **Exactly once**, per `idempotency_key`. A failed execution is never retried
+  automatically; a human clears it after looking.
+
+The engine dispatches `message.*` itself. Anything the host owns needs an
+executor — this is where engine authority ends and host invariants begin:
+
+```ruby
+config.proposal_ttl = 14.days   # unapproved proposals expire (nil = never)
+
+config.proposals do
+  execute("record.plan_change") { |proposal, scope| scope.subject.to_model.update!(plan: proposal.action_arguments[:to]) }
+  precondition("record.plan_change") { |scope| { plan: scope.subject[:plan] } }
+end
+```
+
+Register an executor by exact class, by prefix (`"record.*"`), or `"*"`; most
+specific wins. **The engine makes an action proposable; it does not enforce your
+domain invariants.** Your `Orders::IssueRefund` still re-checks human
+origination, amount limits, and order state on its own terms — so even a bug in
+the engine cannot issue a refund past your guard. That is why money defaults to
+`:human_execution`: the engine records the decision and never performs it.
+
+The kill switch is read again at execution, not just at run start, so disabling
+an agent also halts its already-approved work.
 
 ## Security
 
