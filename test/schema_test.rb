@@ -8,7 +8,7 @@ module Concierge
     AGENT_KEYED = [
       Concierge::Memory, Concierge::Conversation, Concierge::Routine,
       Concierge::ChannelDelivery, Concierge::BudgetLedger, Concierge::Handoff,
-      Concierge::OutboxItem
+      Concierge::OutboxItem, Concierge::AgentRule, Concierge::AgentRun
     ].freeze
 
     test "every per-agent table carries a non-null agent_slug" do
@@ -63,6 +63,35 @@ module Concierge
       assert Concierge::Conversation.new(**billing.key, grain: "account", chat_id: 2).valid?
       # ...a second conversation for the same agent is not.
       refute Concierge::Conversation.new(**csm.key, grain: "account", chat_id: 3).valid?
+    end
+
+    test "only agent_rules may leave the subject half of the key blank" do
+      # A rule can be agent-wide or segment-wide (§10.2), so its subject keys are
+      # nullable — and it is the *only* table where that is true. Everything else
+      # keyed by the pair must carry both halves.
+      (AGENT_KEYED - [ Concierge::AgentRule ]).each do |model|
+        refute model.columns_hash["subject_id"].null,
+               "#{model.table_name}.subject_id should be NOT NULL"
+      end
+
+      assert Concierge::AgentRule.columns_hash["subject_id"].null
+      assert Concierge::AgentRule.columns_hash["subject_type"].null
+    end
+
+    test "a rule with half a subject key is refused" do
+      # Half a key would read as agent-wide on one query and subject-specific on
+      # another, which is how an isolation hole gets in.
+      half = Concierge::AgentRule.new(agent_slug: "csm", subject_type: "account", body: "x")
+
+      refute half.valid?
+      assert_includes half.errors.attribute_names, :subject_id
+    end
+
+    test "the rule revision trail is not agent-scoped, because it has no scope" do
+      # A revision belongs to exactly one rule, which carries the keys. A second
+      # copy of them would be a second source of truth that could drift.
+      refute Concierge::AgentRuleRevision.column_names.include?("agent_slug")
+      refute Concierge::AgentRuleRevision.singleton_class.include?(AgentScoped::ClassMethods)
     end
 
     test "rows that predate the agent dimension read as the default agent" do

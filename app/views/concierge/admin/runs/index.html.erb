@@ -1,0 +1,51 @@
+<h1>Run provenance</h1>
+
+<p>
+  What each turn was actually told. The rules are pinned at the
+  <strong>version</strong> they were injected at, so the exact instruction text is
+  recoverable from the revision trail even after the rule has been edited — this is
+  the difference between &ldquo;the agent probably followed policy&rdquo; and
+  &ldquo;here is the policy that was in the prompt.&rdquo;
+</p>
+
+<table>
+  <thead>
+    <tr>
+      <th>When</th><th>Agent</th><th>Account</th><th>Trigger</th><th>Status</th>
+      <th>Model</th><th>Tokens</th><th>Snapshot</th><th>Memories</th>
+      <th>Rules injected</th><th>Rules cited</th>
+    </tr>
+  </thead>
+  <tbody>
+    <% @runs.each do |run| %>
+      <tr>
+        <td><%= run.created_at.strftime("%Y-%m-%d %H:%M") %></td>
+        <td><%= run.agent_slug %></td>
+        <td><%= run.subject_type %>#<%= run.subject_id %></td>
+        <td><%= run.trigger %></td>
+        <td><%= run.status %><%= " (#{run.error_class})" if run.error_class %></td>
+        <td><%= run.model %></td>
+        <td><%= run.total_tokens %></td>
+        <td><code><%= run.snapshot_digest.to_s.first(12) %></code></td>
+        <td><%= run.memory_ids.size %></td>
+        <td>
+          <% if run.rules.any? %>
+            <ul>
+              <% run.injected_rule_texts.each do |text| %>
+                <li><%= text %></li>
+              <% end %>
+            </ul>
+          <% else %>
+            none
+          <% end %>
+        </td>
+        <td>
+          <%= run.rule_ids_applied.any? ? run.rule_ids_applied.join(", ") : "—" %>
+          <% if run.unknown_citations? %>
+            <br><strong>cited but never injected: <%= run.unknown_rule_ids.join(", ") %></strong>
+          <% end %>
+        </td>
+      </tr>
+    <% end %>
+  </tbody>
+</table>

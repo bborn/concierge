@@ -1,5 +1,11 @@
 require "ruby_llm"
 
+module Concierge
+  # Base error class for everything the gem raises on purpose. Declared before the
+  # requires below because the files they load subclass it at load time.
+  class Error < StandardError; end
+end
+
 require "concierge/version"
 require "concierge/dsl"
 require "concierge/authority"
@@ -17,6 +23,11 @@ require "concierge/capability/mcp_adapter"
 require "concierge/tools/memory_tool"
 require "concierge/tools/set_outreach_preference_tool"
 require "concierge/tools/routine_tool"
+require "concierge/rules"
+require "concierge/rules/citation"
+require "concierge/rules/conflict_check"
+require "concierge/rules/generalizer"
+require "concierge/rules/guard"
 require "concierge/result"
 require "concierge/chat_resolver"
 require "concierge/run"
@@ -41,9 +52,6 @@ require "concierge/engine"
 #
 # Concierge supplies the runtime, durable memory, channels, and scheduling.
 module Concierge
-  # Base error class for everything the gem raises on purpose.
-  class Error < StandardError; end
-
   class << self
     # Yields the singleton Configuration so the host can set it up:
     #

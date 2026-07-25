@@ -8,7 +8,8 @@ require "securerandom"
 
 [ Concierge::Memory, Concierge::Routine, Concierge::ChannelDelivery,
   Concierge::Handoff, Concierge::OutreachPreference, Concierge::Conversation,
-  Concierge::OutboxItem, Concierge::BudgetLedger, User, Tenant ].each(&:delete_all)
+  Concierge::OutboxItem, Concierge::BudgetLedger, Concierge::AgentRuleRevision,
+  Concierge::AgentRule, Concierge::AgentRun, User, Tenant ].each(&:delete_all)
 
 acme = Tenant.create!(name: "Acme Corp", plan: "pro", last_active_at: 2.days.ago)
 acme.users.create!(email: "dana@acme.test")
@@ -120,8 +121,109 @@ Concierge::OutboxItem.create!(
   channel: "email", kind: "outreach", state: "pending"
 )
 
+# --- Rules: the human-gated behavioral layer (design §10.2) -------------------
+# Memory is what the agent knows about a relationship. A *rule* is a generalized,
+# versioned instruction about how it behaves — and it only goes into force when a
+# human taps Approve. Nothing below activates itself.
+
+# Three in force, one of them account-specific, one a code-enforced guard.
+in_force = [
+  [ :csm,     nil,  :agent,
+    "Never promise or imply a delivery date; point them at the status page instead.",
+    "advisory", nil ],
+  [ :csm,     acme, :subject,
+    "Acme's CEO is skeptical of AI tooling — keep the tone low-key and never mention automation.",
+    "advisory", nil ],
+  [ :billing, nil,  :agent,
+    "Never put the word \"guarantee\" in a billing email.",
+    "guard",
+    { "action_class" => "message.outreach", "deny_when" => { "body" => { "matches" => "guarantee" } } } ]
+].map do |slug, tenant, applies_to, body, enforcement, predicate|
+  scope = scope_for(slug, tenant || acme)
+  rule  = Concierge::Rules.propose(
+    scope, body: body, applies_to: applies_to, enforcement: enforcement,
+    predicate: predicate, author: "dana@acme.test",
+    provenance: { "source" => "authored" }
+  )
+  Concierge::Rules.activate!(rule, by: "operator@acme.test")
+  # These have been in force for a month, so the weekly dreaming job has a real
+  # sample to reason about rather than three rules approved a second ago.
+  rule.update_column(:activated_at, 30.days.ago)
+  rule
+end
+
+# A segment rule: applies to enterprise accounts only (see `segments_for` in the
+# initializer), so Globex sees it and Acme does not.
+enterprise_rule = Concierge::Rules.propose(
+  scope_for(:csm, globex),
+  body: "For enterprise accounts, cite the SOC 2 report by name when asked about security.",
+  applies_to: :segment, segment: "enterprise", author: "dana@acme.test",
+  provenance: { "source" => "authored" }
+)
+Concierge::Rules.activate!(enterprise_rule, by: "operator@acme.test")
+
+# A proposal card awaiting a human tap, drafted from a verbatim human correction —
+# the write path §10.2 specifies, minus the job (which the app runs for real).
+Concierge::Rules.propose(
+  scope_for(:billing, acme),
+  body:   "Always attach the invoice PDF to a billing email.",
+  author: Concierge::Rules.agent_actor(:billing),
+  provenance: {
+    "source"       => "human_correction",
+    "verbatim"     => "You sent Dana an invoice email with no PDF attached again. " \
+                      "Always attach the invoice PDF.",
+    "corrected_by" => "bruno@acme.test"
+  }
+)
+
+# ...and one that *contradicts* a rule already in force, so the conflict check has
+# something to surface. It cannot be approved until a human resolves it.
+Concierge::Rules.propose(
+  scope_for(:csm, acme),
+  body:   "Always promise a delivery date; the status page confuses them.",
+  author: Concierge::Rules.agent_actor(:csm),
+  provenance: { "source" => "human_correction",
+                "verbatim" => "Always promise a delivery date. The status page confuses " \
+                              "them and being vague loses deals.",
+                "corrected_by" => "hank@globex.test" }
+)
+
+# --- Run provenance: what each turn was actually told (design §10.4) -----------
+# Enough history for the dreaming job to have something to reason about: the
+# account-specific rule gets cited, the blanket one never does.
+
+blanket, account_specific = in_force
+
+6.times do |i|
+  Concierge::AgentRun.create!(
+    **scope_for(:csm, acme).key,
+    trigger: i.even? ? "proactive" : "reactive", status: "ok",
+    model: "claude-sonnet-4-5", input_tokens: 900 + (i * 40), output_tokens: 120 + i,
+    snapshot_digest: Concierge::Snapshot.for(
+      subject_for(acme), playbook: Concierge.config.agent(:csm).playbook
+    ).digest,
+    memory_ids: Concierge::Memory.for_scope(scope_for(:csm, acme)).limit(2).pluck(:id),
+    rules: [ blanket.pin, account_specific.pin ],
+    rule_ids_applied: [ account_specific.id ],
+    created_at: (10 - i).days.ago
+  )
+end
+
+# One run where the model cited a rule that was never in its prompt — a claim the
+# provenance screen flags rather than discards.
+Concierge::AgentRun.create!(
+  **scope_for(:billing, globex).key,
+  trigger: "proactive", status: "ok", model: "claude-sonnet-4-5",
+  input_tokens: 640, output_tokens: 88,
+  rules: [], rule_ids_applied: [ 9999 ], unknown_rule_ids: [ 9999 ],
+  created_at: 1.day.ago
+)
+
 puts "Seeded #{Tenant.count} accounts across #{Concierge.config.agents.map(&:slug).join(' + ')} agents: " \
      "#{Concierge::Memory.count} memories, #{Concierge::Routine.count} routines, " \
      "#{Concierge::ChannelDelivery.count} deliveries, #{Concierge::OutboxItem.count} drafted."
 puts "Memory namespaces: #{Concierge::Memory.group(:agent_slug).count.sort.map { |k, v| "#{k}=#{v}" }.join(', ')}."
+puts "Rules: #{Concierge::AgentRule.active.count} active, " \
+     "#{Concierge::AgentRule.proposed.count} awaiting a human tap " \
+     "(cap #{Concierge::Rules.cap} per scope). #{Concierge::AgentRun.count} runs recorded."
 puts "Unsubscribe link to try: /concierge/unsubscribe/#{Concierge::ChannelDelivery.last.unsubscribe_token}"

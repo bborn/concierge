@@ -10,12 +10,70 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_07_19_133447) do
+ActiveRecord::Schema[8.1].define(version: 2026_07_25_132940) do
   create_table "chats", force: :cascade do |t|
     t.datetime "created_at", null: false
     t.integer "model_id"
     t.datetime "updated_at", null: false
     t.index ["model_id"], name: "index_chats_on_model_id"
+  end
+
+  create_table "concierge_agent_rule_revisions", force: :cascade do |t|
+    t.string "actor"
+    t.bigint "agent_rule_id", null: false
+    t.text "body"
+    t.datetime "created_at", null: false
+    t.string "enforcement"
+    t.string "note"
+    t.text "predicate"
+    t.string "state"
+    t.integer "version", null: false
+    t.index ["agent_rule_id", "version"], name: "index_concierge_agent_rule_revisions_on_rule_and_version"
+  end
+
+  create_table "concierge_agent_rules", force: :cascade do |t|
+    t.datetime "activated_at"
+    t.string "agent_slug", null: false
+    t.string "approver"
+    t.string "author"
+    t.text "body", null: false
+    t.datetime "created_at", null: false
+    t.datetime "deprecated_at"
+    t.text "deprecation_evidence"
+    t.datetime "deprecation_proposed_at"
+    t.string "enforcement", default: "advisory", null: false
+    t.text "predicate"
+    t.datetime "proposed_at"
+    t.text "provenance"
+    t.string "segment"
+    t.string "state", default: "proposed", null: false
+    t.string "subject_id"
+    t.string "subject_type"
+    t.bigint "superseded_by_id"
+    t.datetime "updated_at", null: false
+    t.integer "version", default: 1, null: false
+    t.index ["agent_slug", "state", "subject_type", "subject_id"], name: "index_concierge_agent_rules_on_scope_and_state"
+    t.index ["superseded_by_id"], name: "index_concierge_agent_rules_on_superseded_by"
+  end
+
+  create_table "concierge_agent_runs", force: :cascade do |t|
+    t.string "agent_slug", null: false
+    t.bigint "chat_id"
+    t.datetime "created_at", null: false
+    t.string "error_class"
+    t.integer "input_tokens"
+    t.text "memory_ids"
+    t.string "model"
+    t.integer "output_tokens"
+    t.text "rule_ids_applied"
+    t.text "rules"
+    t.string "snapshot_digest"
+    t.string "status", null: false
+    t.string "subject_id", null: false
+    t.string "subject_type", null: false
+    t.string "trigger", null: false
+    t.text "unknown_rule_ids"
+    t.index ["agent_slug", "subject_type", "subject_id", "created_at"], name: "index_concierge_agent_runs_on_scope_and_recency"
   end
 
   create_table "concierge_budget_ledgers", force: :cascade do |t|

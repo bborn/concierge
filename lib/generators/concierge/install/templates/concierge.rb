@@ -46,8 +46,33 @@ Concierge.configure do |config|
 
   # 7. Guard the admin surface. Return truthy to allow.
   # config.authenticate_admin = ->(controller) { controller.current_user&.admin? }
+  #
+  # ...and say who is driving it, so approving a rule records a real approver.
+  # Without this, the rule gate refuses rather than inventing one.
+  # config.admin_actor = ->(controller) { controller.current_user.email }
 
-  # 8. More than one business function? Everything above is the implicit :csm
+  # 8. Rules — generalized, versioned, human-gated behavioral instructions, split
+  # out from memory. A human correction is stored verbatim and a background job
+  # drafts a rule from it; the rule is inert until a human approves it at
+  # /concierge/admin/rules. All optional:
+  #
+  # config.active_rule_cap        = 12      # active rules per scope; hitting it blocks
+  # config.rule_generalizer       = ->(correction) { ... }  # your own drafting pass
+  # config.rule_proposal_notifier = ->(rule) { Slack.post_card(rule) }
+  # config.segments_for           = ->(subject) { subject[:region] == "eu" ? [ "eu" ] : [] }
+  #
+  # Every completed run records what was in its prompt (memories, rule versions,
+  # snapshot digest). That is real write volume — prune on your own cadence:
+  #
+  #   Concierge::AgentRun.prune!(older_than: 90.days)
+  #
+  # And schedule the weekly consolidation pass, which only ever *proposes*:
+  #
+  #   concierge_dreaming:
+  #     class: Concierge::RuleDreamingJob
+  #     schedule: every sunday at 3am
+
+  # 9. More than one business function? Everything above is the implicit :csm
   # agent. Declare agents explicitly to run several over the same accounts, each
   # with its own persona, charter, tools, authority envelope, memory namespace
   # (the slug) and kill switch. State is keyed by (agent, account), so no agent

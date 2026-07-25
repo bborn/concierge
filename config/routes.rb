@@ -10,6 +10,8 @@ Concierge::Engine.routes.draw do
   namespace :admin do
     resources :agents, only: [ :index ]
     resources :memories, only: [ :index, :update, :destroy ]
+    resources :rules, only: [ :index, :update ]
+    resources :runs, only: [ :index ]
     resources :routines, only: [ :index ]
     resources :deliveries, only: [ :index ]
   end

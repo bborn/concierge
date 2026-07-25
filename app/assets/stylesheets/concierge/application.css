@@ -13,3 +13,17 @@
  *= require_tree .
  *= require_self
  */
+
+/* A refusal from the rule gate (cap reached, unresolved conflict, missing
+   approver) has to read as something to act on, not as decoration. */
+.concierge-flash {
+  padding: 0.6rem 0.8rem;
+  border-left: 4px solid #2f6f3f;
+  background: #eef7f0;
+  font-weight: 600;
+}
+
+.concierge-flash--alert {
+  border-left-color: #a12c2c;
+  background: #fbeeee;
+}

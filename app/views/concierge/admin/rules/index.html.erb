@@ -1,0 +1,163 @@
+<h1>Rules</h1>
+
+<p>
+  A <strong>rule</strong> is a generalized, versioned instruction about how an agent
+  behaves — not a fact about one relationship (that is a
+  <%= link_to "memory", admin_memories_path %>). Rules are
+  <strong>human-gated</strong>: an agent may propose one, only a person may promote
+  it, and every promotion is recorded. Each agent may hold at most
+  <strong><%= @cap %></strong> active rules per scope — hitting the cap blocks and
+  forces a consolidation rather than silently dropping instructions.
+</p>
+
+<h2>Proposals awaiting a human tap (<%= @proposed.count %>)</h2>
+
+<% if @proposed.none? %>
+  <p><em>Nothing waiting.</em></p>
+<% else %>
+  <% @proposed.each do |rule| %>
+    <table>
+      <tbody>
+        <tr><th>Rule</th><td>#<%= rule.id %> v<%= rule.version %> &middot; <%= rule.agent_slug %></td></tr>
+        <tr><th>Instruction</th><td><strong><%= rule.body %></strong></td></tr>
+        <tr>
+          <th>Scope</th>
+          <td>
+            <% if rule.subject_id.present? %>
+              <%= rule.subject_type %>#<%= rule.subject_id %>
+            <% elsif rule.segment.present? %>
+              segment <code><%= rule.segment %></code>
+            <% else %>
+              every account this agent serves
+            <% end %>
+          </td>
+        </tr>
+        <tr><th>Enforcement</th><td><%= rule.enforcement %><%= " (predicate: #{rule.predicate.to_json})" if rule.guard? %></td></tr>
+        <tr><th>Drafted by</th><td><%= rule.author || "unknown" %></td></tr>
+        <tr>
+          <th>Provenance</th>
+          <td>
+            <% if rule.provenance["verbatim"].present? %>
+              from a human correction, stored verbatim:
+              <em>&ldquo;<%= rule.provenance["verbatim"] %>&rdquo;</em>
+              <% if rule.provenance["corrected_by"].present? %>
+                (<%= rule.provenance["corrected_by"] %>)
+              <% end %>
+            <% elsif rule.merges.any? %>
+              a consolidation of rules <%= rule.merges.map { |id| "##{id}" }.join(", ") %>
+            <% else %>
+              <%= rule.provenance.except("conflicts").to_json %>
+            <% end %>
+          </td>
+        </tr>
+        <% if rule.conflicts? %>
+          <tr>
+            <th>Conflicts</th>
+            <td>
+              <strong>Resolve before approving.</strong>
+              <ul>
+                <% rule.conflicts.each do |conflict| %>
+                  <li>
+                    <%= conflict["kind"] %> of rule #<%= conflict["rule_id"] %>
+                    (<%= conflict["similarity"] %> overlap): <em><%= conflict["body"] %></em>
+                  </li>
+                <% end %>
+              </ul>
+            </td>
+          </tr>
+        <% end %>
+        <tr>
+          <th></th>
+          <td>
+            <%= form_with url: admin_rule_path(rule), method: :patch do |f| %>
+              <%= f.hidden_field :transition, value: "activate" %>
+              <%# When the host wired admin_actor, the approver is the signed-in
+                  human and a name box here would be theatre. Without it, the gate
+                  refuses — so ask. %>
+              <% unless Concierge.config.admin_actor %>
+                <%= f.text_field :by, placeholder: "your name or email" %>
+              <% end %>
+              <% if rule.conflicts? %>
+                <label>
+                  <%= f.check_box :acknowledge_conflicts %>
+                  both rules belong — approve anyway
+                </label>
+              <% end %>
+              <%= f.submit "Approve — make active" %>
+            <% end %>
+            <%= button_to "Reject", admin_rule_path(rule), method: :patch,
+                  params: { transition: "reject" } %>
+          </td>
+        </tr>
+      </tbody>
+    </table>
+  <% end %>
+<% end %>
+
+<h2>Active (<%= @active.count %>)</h2>
+
+<% if @retiring.any? %>
+  <p>
+    <strong>The dreaming job proposed retiring <%= @retiring.count %> rule(s)</strong> —
+    marked below with their evidence. Nothing is retired without a human.
+  </p>
+<% end %>
+
+<table>
+  <thead>
+    <tr>
+      <th>Agent</th><th>Rule</th><th>Instruction</th><th>Scope</th>
+      <th>Enforcement</th><th>Approved by</th><th>Retirement proposed</th><th></th>
+    </tr>
+  </thead>
+  <tbody>
+    <% @active.each do |rule| %>
+      <tr>
+        <td><%= rule.agent_slug %></td>
+        <td>#<%= rule.id %> v<%= rule.version %></td>
+        <td><%= rule.body %></td>
+        <td>
+          <% if rule.subject_id.present? %>
+            <%= rule.subject_type %>#<%= rule.subject_id %>
+          <% elsif rule.segment.present? %>
+            segment <%= rule.segment %>
+          <% else %>
+            agent-wide
+          <% end %>
+        </td>
+        <td><%= rule.enforcement %></td>
+        <td><%= rule.approver %></td>
+        <td>
+          <% if rule.retirement_proposed? %>
+            <%= rule.deprecation_evidence["reason"] %>
+            <% if rule.deprecation_evidence["runs_injected"] %>
+              — in <%= rule.deprecation_evidence["runs_injected"] %> prompts, never cited
+            <% end %>
+          <% end %>
+        </td>
+        <td>
+          <%= button_to "Retire", admin_rule_path(rule), method: :patch,
+                params: { transition: "deprecate" } %>
+        </td>
+      </tr>
+    <% end %>
+  </tbody>
+</table>
+
+<h2>Retired &amp; rejected</h2>
+<table>
+  <thead>
+    <tr><th>Agent</th><th>Rule</th><th>State</th><th>Instruction</th><th>Superseded by</th></tr>
+  </thead>
+  <tbody>
+    <% @deprecated.each do |rule| %>
+      <tr>
+        <td><%= rule.agent_slug %></td>
+        <td>#<%= rule.id %> v<%= rule.version %></td>
+        <td><%= rule.state %></td>
+        <td><%= rule.body %></td>
+        <td><%= "##{rule.superseded_by_id}" if rule.superseded_by_id %></td>
+      </tr>
+    <% end %>
+  </tbody>
+</table>

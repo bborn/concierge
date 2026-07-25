@@ -129,7 +129,7 @@ module Concierge
       assert_equal 0, Concierge::Routine.for_scope(@grid[[ :csm, :globex ]]).count
     end
 
-    test "handoffs, conversations, deliveries and outbox rows all carry the pair" do
+    test "handoffs, conversations, deliveries, outbox, rules and runs all carry the pair" do
       csm     = @grid[[ :csm, :acme ]]
       billing = @grid[[ :billing, :acme ]]
 
@@ -137,14 +137,96 @@ module Concierge
       Concierge::Governance.new.record!(csm, channel: "email")
       Concierge::ChatResolver.call(csm)
       Concierge::OutboxItem.create!(**csm.key, body: "draft", state: "pending")
+      Concierge::AgentRule.create!(**csm.key, body: "a rule", state: "active")
+      Concierge::AgentRun.create!(**csm.key, trigger: "reactive", status: "ok")
 
-      [ Concierge::Handoff, Concierge::ChannelDelivery,
-        Concierge::Conversation, Concierge::OutboxItem ].each do |model|
+      [ Concierge::Handoff, Concierge::ChannelDelivery, Concierge::Conversation,
+        Concierge::OutboxItem, Concierge::AgentRule, Concierge::AgentRun ].each do |model|
         assert_equal 1, model.for_scope(csm).count,   "#{model} lost the CSM's row"
         assert_equal 0, model.for_scope(billing).count,
                      "#{model} leaked the CSM's row into billing"
         assert_equal 0, model.for_scope(@grid[[ :csm, :globex ]]).count,
                      "#{model} leaked Acme's row into Globex"
+      end
+    end
+
+    test "every cell's rules are its own, and nothing else's" do
+      # Rules are the one table whose subject keys may be null (a rule can be
+      # agent-wide), which makes it the easiest place for the agent dimension to
+      # leak. Assert the grid cell by cell like every other table.
+      @grid.each do |(agent_slug, account), scope|
+        activate(scope, "Rule for #{agent_slug} about #{account} specifically.")
+      end
+
+      @grid.each do |(agent_slug, account), scope|
+        bodies = Concierge::Rules.active_for(scope).map(&:body)
+
+        assert_equal [ "Rule for #{agent_slug} about #{account} specifically." ], bodies,
+                     "#{agent_slug}/#{account} saw #{bodies.inspect}"
+      end
+    end
+
+    test "an agent-wide rule crosses accounts but never the agent boundary" do
+      wide = Concierge::Rules.propose(@grid[[ :csm, :acme ]],
+                                      body: "Never promise a delivery date.",
+                                      applies_to: :agent, author: "a")
+      Concierge::Rules.activate!(wide, by: "sam")
+
+      # By design it reaches every account this agent serves...
+      [ [ :csm, :acme ], [ :csm, :globex ] ].each do |cell|
+        assert_includes Concierge::Rules.active_for(@grid[cell]).map(&:id), wide.id
+      end
+      # ...and no account of any other agent.
+      [ [ :billing, :acme ], [ :billing, :globex ] ].each do |cell|
+        refute_includes Concierge::Rules.active_for(@grid[cell]).map(&:id), wide.id,
+                        "an agent-wide rule leaked into another agent"
+      end
+    end
+
+    test "there is no shared namespace for rules" do
+      # §10.3's `_shared` exists for facts every agent legitimately reads. An
+      # *instruction* that crosses agents is the contamination this phase prevents,
+      # so a rule written into the shared namespace is readable by nobody.
+      Concierge::AgentRule.create!(**@grid[[ :csm, :acme ]].shared_key,
+                                   body: "Never mention the roadmap.", state: "active")
+
+      @grid.each_value do |scope|
+        refute_includes Concierge::Rules.active_for(scope).map(&:body), "Never mention the roadmap."
+      end
+    end
+
+    test "guard rules bind only the agent that owns them" do
+      rule = Concierge::Rules.propose(
+        @grid[[ :billing, :acme ]],
+        body: "Never put the word guarantee in a customer email.",
+        enforcement: "guard", author: "a",
+        predicate: { "action_class" => Concierge::Authority::MESSAGE_OUTREACH,
+                     "deny_when" => { "body" => { "matches" => "guarantee" } } }
+      )
+      Concierge::Rules.activate!(rule, by: "sam")
+
+      assert_equal 1, Concierge::Rules.guard_violations(@grid[[ :billing, :acme ]],
+                                                        action_class: "message.outreach",
+                                                        payload: { body: "we guarantee it" }).size
+      [ [ :csm, :acme ], [ :billing, :globex ], [ :csm, :globex ] ].each do |cell|
+        assert_empty Concierge::Rules.guard_violations(@grid[cell],
+                                                       action_class: "message.outreach",
+                                                       payload: { body: "we guarantee it" }),
+                     "a guard rule bound #{cell.inspect}"
+      end
+    end
+
+    test "run provenance is keyed by the pair, so an audit cannot pull in a neighbour" do
+      @grid.each do |(agent_slug, account), scope|
+        Concierge::Test::FakeChat.script(reply: "reply for #{agent_slug}/#{account}")
+        Concierge::Run.reactive(scope, "hi")
+      end
+
+      @grid.each do |(agent_slug, account), scope|
+        runs = Concierge::AgentRun.for_scope(scope)
+
+        assert_equal 1, runs.count, "#{agent_slug}/#{account} saw #{runs.count} runs"
+        assert_equal agent_slug.to_s, runs.first.agent_slug
       end
     end
 
@@ -182,6 +264,12 @@ module Concierge
     end
 
     private
+
+    def activate(scope, body)
+      rule = Concierge::Rules.propose(scope, body: body, author: "drafter")
+      Concierge::Rules.activate!(rule, by: "sam")
+      rule
+    end
 
     def agent(slug)
       Concierge.config.agent(slug)
