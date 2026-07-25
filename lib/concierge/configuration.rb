@@ -93,6 +93,22 @@ module Concierge
     # Without it there are no segments and segment-scoped rules never apply.
     attr_accessor :segments_for
 
+    # --- Proposals (Phase 10, §10.5/§10.6) ---
+
+    # How long a proposal stays approvable. Nil (the default) means proposals do
+    # not expire: silently retiring a host's staged drafts on upgrade would be a
+    # surprise, and a proposal that never expires is exactly today's behaviour for
+    # the outbox this generalizes. Set it and Concierge::SweepJob retires
+    # unapproved proposals past their date — an approval nobody acted on for a
+    # month should have to be re-drafted against current state, not executed.
+    attr_accessor :proposal_ttl
+
+    # Optional callable(proposal) invoked when a proposal is created, so a host can
+    # post the approval card wherever its humans are. Without one the card still
+    # lives on /concierge/admin/proposals. A raising notifier never loses the
+    # proposal — the same rule as rule_proposal_notifier.
+    attr_accessor :proposal_notifier
+
     # --- Admin surface (Phase 9) ---
 
     # Callable(controller) -> truthy to permit admin access. Nil = deny (the admin
@@ -144,6 +160,20 @@ module Concierge
       @capabilities ||= Capability::Registry.new
       @capabilities.instance_eval(&block) if block
       @capabilities
+    end
+
+    # Where the host says how an action class it owns is performed, and what that
+    # action assumed about the world (§10.6/§10.8). The engine registers its own
+    # +message.*+ executor here, so a host can override it.
+    #
+    #   config.proposals do
+    #     execute("record.update") { |proposal, scope| ... }
+    #     precondition("record.update") { |scope| { plan: scope.subject[:plan] } }
+    #   end
+    def proposals(&block)
+      @proposals ||= Proposal::Registry.new
+      @proposals.instance_eval(&block) if block
+      @proposals
     end
 
     # The default agent an un-pluralized host implicitly is (design §10.9).

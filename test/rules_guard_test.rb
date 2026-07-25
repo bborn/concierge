@@ -98,7 +98,7 @@ module Concierge
       # :billing gates on authority, so a permitted send still stages for a human —
       # the point is that the guard refused *before* the envelope was consulted.
       assert_equal :drafted, allowed
-      assert_equal 1, OutboxItem.for_scope(@scope).count
+      assert_equal 1, AgentProposal.for_scope(@scope).count
     end
 
     test "a guard rule in one agent's scope never binds another agent" do

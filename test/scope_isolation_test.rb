@@ -129,25 +129,90 @@ module Concierge
       assert_equal 0, Concierge::Routine.for_scope(@grid[[ :csm, :globex ]]).count
     end
 
-    test "handoffs, conversations, deliveries, outbox, rules and runs all carry the pair" do
+    test "handoffs, conversations, deliveries, proposals, rules and runs all carry the pair" do
       csm     = @grid[[ :csm, :acme ]]
       billing = @grid[[ :billing, :acme ]]
 
       Concierge::Handoff.seize!(csm, operator: "sam")
       Concierge::Governance.new.record!(csm, channel: "email")
       Concierge::ChatResolver.call(csm)
-      Concierge::OutboxItem.create!(**csm.key, body: "draft", state: "pending")
+      Concierge::AgentProposal.create!(**csm.key, action_class: "record.update",
+                                       gate: "human_approval", idempotency_key: "k1")
       Concierge::AgentRule.create!(**csm.key, body: "a rule", state: "active")
       Concierge::AgentRun.create!(**csm.key, trigger: "reactive", status: "ok")
 
       [ Concierge::Handoff, Concierge::ChannelDelivery, Concierge::Conversation,
-        Concierge::OutboxItem, Concierge::AgentRule, Concierge::AgentRun ].each do |model|
+        Concierge::AgentProposal, Concierge::AgentRule, Concierge::AgentRun ].each do |model|
         assert_equal 1, model.for_scope(csm).count,   "#{model} lost the CSM's row"
         assert_equal 0, model.for_scope(billing).count,
                      "#{model} leaked the CSM's row into billing"
         assert_equal 0, model.for_scope(@grid[[ :csm, :globex ]]).count,
                      "#{model} leaked Acme's row into Globex"
       end
+    end
+
+    test "every cell's proposals are its own, and nothing else's" do
+      @grid.each do |(agent_slug, account), scope|
+        Concierge::AgentProposal.create!(
+          **scope.key, action_class: "record.update", gate: "human_approval",
+          idempotency_key: "#{agent_slug}-#{account}",
+          payload: { "note" => "proposed for #{agent_slug}/#{account}" }
+        )
+      end
+
+      @grid.each do |(agent_slug, account), scope|
+        rows = Concierge::AgentProposal.for_scope(scope)
+
+        assert_equal 1, rows.count, "#{agent_slug}/#{account} saw #{rows.count} proposals"
+        assert_equal "proposed for #{agent_slug}/#{account}", rows.sole.payload["note"]
+      end
+    end
+
+    test "approving one cell's proposal executes into that cell and no other" do
+      # :billing gates on both accounts, so both stage rather than send.
+      acme   = @grid[[ :billing, :acme ]]
+      globex = @grid[[ :billing, :globex ]]
+      [ acme, globex ].each do |scope|
+        Concierge::Outreach.deliver(
+          Concierge::Result.new(reply_text: "note for #{scope.subject.id}"), scope, channel: :in_app
+        )
+      end
+
+      Concierge::ApprovalIntake.approve(Concierge::AgentProposal.for_scope(acme).sole,
+                                        by: "sam@acme.test")
+
+      assert_equal 1, Concierge::ChannelDelivery.for_scope(acme).count
+      assert_equal 0, Concierge::ChannelDelivery.for_scope(globex).count,
+                   "approving Acme's proposal delivered to Globex"
+      assert_equal 0, Concierge::ChannelDelivery.for_scope(@grid[[ :csm, :acme ]]).count,
+                   "a billing approval was audited under the CSM"
+      assert_equal "proposed", Concierge::AgentProposal.for_scope(globex).sole.state,
+                   "approving one cell's proposal decided another's"
+    end
+
+    test "a guard rule blocks execution only inside the cell that owns it" do
+      acme   = @grid[[ :billing, :acme ]]
+      globex = @grid[[ :billing, :globex ]]
+      [ acme, globex ].each do |scope|
+        Concierge::Outreach.deliver(
+          Concierge::Result.new(reply_text: "we guarantee it"), scope, channel: :in_app
+        )
+      end
+
+      rule = Concierge::Rules.propose(
+        acme, body: "Never put the word guarantee in a customer email.",
+              enforcement: "guard", author: "a",
+              predicate: { "action_class" => Concierge::Authority::MESSAGE_OUTREACH,
+                           "deny_when" => { "body" => { "matches" => "guarantee" } } }
+      )
+      Concierge::Rules.activate!(rule, by: "sam")
+
+      assert_equal :blocked_by_rule,
+                   Concierge::ApprovalIntake.approve(Concierge::AgentProposal.for_scope(acme).sole,
+                                                     by: "sam@acme.test")
+      assert_equal :executed,
+                   Concierge::ApprovalIntake.approve(Concierge::AgentProposal.for_scope(globex).sole,
+                                                     by: "sam@acme.test")
     end
 
     test "every cell's rules are its own, and nothing else's" do

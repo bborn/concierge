@@ -8,7 +8,7 @@ require "securerandom"
 
 [ Concierge::Memory, Concierge::Routine, Concierge::ChannelDelivery,
   Concierge::Handoff, Concierge::OutreachPreference, Concierge::Conversation,
-  Concierge::OutboxItem, Concierge::BudgetLedger, Concierge::AgentRuleRevision,
+  Concierge::AgentProposal, Concierge::BudgetLedger, Concierge::AgentRuleRevision,
   Concierge::AgentRule, Concierge::AgentRun, User, Tenant ].each(&:delete_all)
 
 acme = Tenant.create!(name: "Acme Corp", plan: "pro", last_active_at: 2.days.ago)
@@ -110,15 +110,55 @@ Concierge::OutreachPreference.create!(**subject_for(initech).key, opted_out: tru
 
 Concierge::Handoff.seize!(scope_for(:csm, globex), operator: "bruno@acme.test")
 
-# --- One drafted proposal, from the agent whose authority envelope gates -------
-# :billing declares `default :human_approval`, so its outreach stages for a human
-# instead of sending. The CSM stays autonomous-within-caps.
+# --- Proposals: actions an agent staged because it may not perform them --------
+# :billing declares `default :human_approval` and `money.refund: :human_execution`,
+# so its work stages for a human instead of happening. The CSM stays
+# autonomous-within-caps. Every card below is waiting on /concierge/admin/proposals.
 
-Concierge::OutboxItem.create!(
-  **scope_for(:billing, acme).key,
-  body: "Heads up: the card on file expires before the next invoice date. " \
-        "Want me to send Dana a link to update it?",
-  channel: "email", kind: "outreach", state: "pending"
+# 1. An outbound message — the one action class the OLD outbox could stage, now
+#    one action class among several. Driven through the real Outreach path, so
+#    governance still has its say *before* the agent's authority envelope does: a
+#    draft the frequency cap would suppress never becomes a card at all. (Acme
+#    asked for less email and heard from billing five days ago, which is why this
+#    one is Globex's.)
+Concierge::Outreach.deliver(
+  Concierge::Result.new(
+    reply_text: "Heads up: the card on file expires before the next invoice date. " \
+                "Want me to send Hank a link to update it?"
+  ),
+  scope_for(:billing, globex), channel: :email
+)
+
+# 2. A record mutation the engine performs itself once a human approves it, with
+#    the precondition the host declared for it (see the initializer): approve it
+#    and Acme's plan really changes; change Acme's plan first and the approval
+#    refuses, because it was a decision about a different world.
+Concierge::Proposal.propose(
+  scope_for(:billing, acme),
+  action_class: "record.plan_change",
+  payload: { from: "pro", to: "enterprise", reason: "seat count passed the enterprise floor" }
+)
+
+# 3. Money. `:human_execution` — the engine records the decision and stops; a
+#    person issues the refund, and the host's own refund seam re-checks human
+#    origination independently (design §10.8). Note there is deliberately no
+#    executor registered for this class.
+Concierge::Proposal.propose(
+  scope_for(:billing, acme),
+  action_class: "money.refund",
+  payload: { order_id: 4471, amount_cents: 12_900, reason: "disputed invoice, resolved in their favour" }
+)
+
+# 4. One already decided, so the audit trail has both halves: proposed by an
+#    agent, declined by a named human, with the reason on the row.
+declined = Concierge::Proposal.propose(
+  scope_for(:billing, initech),
+  action_class: "record.plan_change",
+  payload: { from: "free", to: "pro", reason: "they clicked upgrade twice" }
+)
+Concierge::ApprovalIntake.reject(
+  declined, by: "operator@acme.test",
+  reason: "they never completed onboarding — upgrading them would be the wrong call"
 )
 
 # --- Rules: the human-gated behavioral layer (design §10.2) -------------------
@@ -221,7 +261,8 @@ Concierge::AgentRun.create!(
 
 puts "Seeded #{Tenant.count} accounts across #{Concierge.config.agents.map(&:slug).join(' + ')} agents: " \
      "#{Concierge::Memory.count} memories, #{Concierge::Routine.count} routines, " \
-     "#{Concierge::ChannelDelivery.count} deliveries, #{Concierge::OutboxItem.count} drafted."
+     "#{Concierge::ChannelDelivery.count} deliveries, " \
+     "#{Concierge::AgentProposal.proposed.count} proposals awaiting a human."
 puts "Memory namespaces: #{Concierge::Memory.group(:agent_slug).count.sort.map { |k, v| "#{k}=#{v}" }.join(', ')}."
 puts "Rules: #{Concierge::AgentRule.active.count} active, " \
      "#{Concierge::AgentRule.proposed.count} awaiting a human tap " \

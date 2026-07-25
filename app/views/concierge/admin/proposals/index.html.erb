@@ -1,0 +1,197 @@
+<h1>Proposals</h1>
+
+<p>
+  An agent's <strong>authority envelope</strong> decides what it may do on its own.
+  Anything it may not — an outbound message from a gated agent, a record update,
+  money — arrives here as a <strong>proposal</strong> instead of happening. Approving
+  is <strong>maker-checker</strong>: the actor that proposed an action can never be
+  the one that approves it, and an agent can never approve at all. Execution reads
+  the approved row, re-checks what the proposal assumed, and happens exactly once.
+</p>
+
+<h2>Awaiting a human (<%= @awaiting.count %>)</h2>
+
+<% if @awaiting.none? %>
+  <p><em>Nothing waiting.</em></p>
+<% else %>
+  <% @awaiting.each do |proposal| %>
+    <dl>
+      <dt>Proposal</dt>
+      <dd>#<%= proposal.id %> &middot; <code><%= proposal.action_class %></code></dd>
+
+      <dt>Agent</dt>
+      <dd><%= proposal.agent_slug %> &middot; <%= proposal.subject_type %>#<%= proposal.subject_id %></dd>
+
+      <dt><%= proposal.message? ? "Message" : "Arguments" %></dt>
+      <dd>
+        <% if proposal.message? %>
+          <blockquote><%= proposal.body %></blockquote>
+          via <%= proposal.channel || "whichever channel can reach them" %>
+        <% else %>
+          <% proposal.payload.each do |key, value| %>
+            <code><%= key %></code>: <%= value %><br>
+          <% end %>
+        <% end %>
+      </dd>
+
+      <dt>Gate</dt>
+      <dd>
+        <%= proposal.gate.tr("_", " ") %>
+        <% if proposal.human_execution? %>
+          — <strong>the engine will not perform this.</strong> Approve it, do it
+          yourself, then record that you did.
+        <% else %>
+          — approving executes it.
+        <% end %>
+      </dd>
+
+      <dt>Proposed by</dt>
+      <dd>
+        <%= proposal.created_by %> at <%= proposal.proposed_at %>
+        <% if proposal.agent_run_id %>
+          (<%= link_to "run ##{proposal.agent_run_id}", admin_runs_path %>)
+        <% end %>
+      </dd>
+
+      <% if proposal.rule_ids_applied.any? %>
+        <dt>Rules applied</dt>
+        <dd>
+          the agent said it applied
+          <%= link_to proposal.rule_ids_applied.map { |id| "##{id}" }.join(", "), admin_rules_path %>
+        </dd>
+      <% end %>
+
+      <% if proposal.precondition_digest.present? %>
+        <dt>Assumed</dt>
+        <dd>
+          state digest <code><%= proposal.precondition_digest %></code> — re-checked at
+          execution, and a mismatch refuses rather than acting on it
+        </dd>
+      <% end %>
+
+      <% if proposal.expires_at.present? %>
+        <dt>Expires</dt>
+        <dd><%= proposal.expires_at %></dd>
+      <% end %>
+
+      <% if proposal.execution_error.present? %>
+        <dt>Last refusal</dt>
+        <dd><strong><%= proposal.execution_error %></strong></dd>
+      <% end %>
+
+      <%= form_with url: admin_proposal_path(proposal), method: :patch do |f| %>
+        <%= f.hidden_field :transition, value: "approve" %>
+        <%# When the host wired admin_actor the approver is the signed-in human;
+            without it the gate refuses, so ask. Same rule as the rules screen. %>
+        <% unless Concierge.config.admin_actor %>
+          <%= f.text_field :by, placeholder: "your name or email" %>
+        <% end %>
+        <%= f.submit "Approve" %>
+      <% end %>
+
+      <%= form_with url: admin_proposal_path(proposal), method: :patch do |f| %>
+        <%= f.hidden_field :transition, value: "reject" %>
+        <% unless Concierge.config.admin_actor %>
+          <%= f.text_field :by, placeholder: "your name or email" %>
+        <% end %>
+        <%= f.text_field :reason, placeholder: "why not — required" %>
+        <%= f.submit "Reject" %>
+      <% end %>
+
+      <% if proposal.message? %>
+        <%= form_with url: admin_proposal_path(proposal), method: :patch do |f| %>
+          <%= f.hidden_field :transition, value: "correct" %>
+          <% unless Concierge.config.admin_actor %>
+            <%= f.text_field :by, placeholder: "your name or email" %>
+          <% end %>
+          <%= f.text_area :body, value: proposal.body %>
+          <%= f.submit "Correct and approve" %>
+        <% end %>
+      <% end %>
+    </dl>
+  <% end %>
+<% end %>
+
+<h2>Approved — not performed yet (<%= @unexecuted.count %>)</h2>
+
+<p>
+  A <code>human_execution</code> gate means the engine records the decision and stops.
+  Money is the case this exists for: the engine never carries it out, and the host's
+  own seam re-checks its invariants independently. The rest are approved actions the
+  engine <em>refused</em> at execution — a precondition that moved, a guard rule that
+  now blocks them, a disabled agent, an executor that raised. Nothing is retried
+  automatically: at-least-once retries of an action a human approved once is how one
+  refund becomes two.
+</p>
+
+<table>
+  <thead>
+    <tr>
+      <th>Proposal</th><th>Agent</th><th>Action</th><th>Gate</th>
+      <th>Approved by</th><th>Why not yet</th><th></th>
+    </tr>
+  </thead>
+  <tbody>
+    <% @unexecuted.each do |proposal| %>
+      <tr>
+        <td>#<%= proposal.id %></td>
+        <td><%= proposal.agent_slug %></td>
+        <td><code><%= proposal.action_class %></code> &middot; <%= proposal.summary %></td>
+        <td><%= proposal.gate.tr("_", " ") %></td>
+        <td><%= proposal.approved_by %> at <%= proposal.approved_at %></td>
+        <td>
+          <% if proposal.human_execution? %>
+            the engine never performs this one — you do
+          <% elsif proposal.execution_error.present? %>
+            <strong><%= proposal.execution_error %></strong>
+            <%= "(#{proposal.execution_failed_at})" if proposal.execution_failed? %>
+          <% else %>
+            approved, not yet dispatched
+          <% end %>
+        </td>
+        <td>
+          <% if proposal.human_execution? %>
+            <%= button_to "I performed this", admin_proposal_path(proposal), method: :patch,
+                  params: { transition: "executed" } %>
+          <% else %>
+            <%= button_to "Retry execution", admin_proposal_path(proposal), method: :patch,
+                  params: { transition: "retry" } %>
+          <% end %>
+        </td>
+      </tr>
+    <% end %>
+  </tbody>
+</table>
+
+<h2>Decided</h2>
+
+<table>
+  <thead>
+    <tr>
+      <th>Proposal</th><th>Agent</th><th>Action</th><th>State</th>
+      <th>Proposed by</th><th>Decided by</th><th>Outcome</th>
+    </tr>
+  </thead>
+  <tbody>
+    <% @decided.each do |proposal| %>
+      <tr>
+        <td>#<%= proposal.id %></td>
+        <td><%= proposal.agent_slug %></td>
+        <td><code><%= proposal.action_class %></code></td>
+        <td><%= proposal.state %></td>
+        <td><%= proposal.created_by %></td>
+        <td><%= proposal.approved_by || proposal.rejected_by || "—" %></td>
+        <td>
+          <% if proposal.rejected? %>
+            <%= proposal.rejected_reason %>
+          <% elsif proposal.executed? %>
+            executed <%= proposal.executed_at %> by <%= proposal.executed_by || "the engine" %>
+            <%= "(corrected first by #{proposal.corrected_by})" if proposal.corrected? %>
+          <% else %>
+            expired unapproved on <%= proposal.expires_at %>
+          <% end %>
+        </td>
+      </tr>
+    <% end %>
+  </tbody>
+</table>

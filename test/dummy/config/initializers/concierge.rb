@@ -60,6 +60,39 @@ Rails.application.config.to_prepare do
     c.weekly_review_instruction = "Review this account and reach out if something is worth their attention."
     c.priority = ->(subject) { subject[:plan] == "enterprise" ? 100 : 1 }
 
+    # --- Proposals: where the engine's authority ends (design §10.6/§10.8) -----
+    # An action an agent may not perform itself is staged as an AgentProposal and
+    # waits on /concierge/admin/proposals. The engine dispatches `message.*`
+    # itself; anything the *host* owns needs an executor here.
+
+    # A proposal nobody acts on for a fortnight has to be re-drafted against
+    # current state rather than executed late.
+    c.proposal_ttl = 14.days
+
+    c.proposal_notifier = lambda do |proposal|
+      Rails.logger.info("[dummy] proposal ##{proposal.id} (#{proposal.action_class}) " \
+                        "awaiting a human for #{proposal.agent_slug}")
+    end
+
+    c.proposals do
+      # A record mutation the engine performs *after* a human approves it. It gets
+      # the resolved Scope, so it never looks an account up by a raw id.
+      execute "record.plan_change" do |proposal, scope|
+        scope.subject.to_model.update!(plan: proposal.action_arguments[:to])
+      end
+
+      # ...and what that proposal assumed. If the plan changed between the draft
+      # and the approval, the approval was about a different world: the execution
+      # refuses instead of overwriting whatever happened in between.
+      precondition("record.plan_change") { |scope| { "plan" => scope.subject[:plan] } }
+
+      # NOTE there is deliberately no `money.refund` executor. :billing gates it to
+      # :human_execution, so the engine records the decision and a human performs
+      # it — and a host's own refund seam re-checks human origination itself
+      # (design §10.8). An engine that could execute this is the thing §10.8 exists
+      # to prevent.
+    end
+
     # --- Two business functions over the same Tenants (design §10.1) ----------
     # Each agent block carries the six slots: identity/persona/model, charter,
     # tool scope, authority envelope, memory namespace (the slug), kill switch.

@@ -56,10 +56,10 @@ module Concierge
 
         if level == :autonomous
           assert_equal :delivered, status, "#{level} should have sent"
-          assert_equal 0, Concierge::OutboxItem.for_scope(scope).count
+          assert_equal 0, Concierge::AgentProposal.for_scope(scope).count
         else
           assert_equal :drafted, status, "#{level} should have staged for a human"
-          assert_equal 1, Concierge::OutboxItem.for_scope(scope).pending.count
+          assert_equal 1, Concierge::AgentProposal.for_scope(scope).proposed.count
         end
       end
     end
@@ -72,7 +72,7 @@ module Concierge
         Concierge::Result.new(reply_text: "your card expires soon"), billing, channel: :email
       )
 
-      row = Concierge::OutboxItem.sole
+      row = Concierge::AgentProposal.sole
       assert_equal "billing", row.agent_slug
       assert_equal "your card expires soon", row.body
       assert_equal 0, Concierge::ChannelDelivery.count, "a staged proposal must not also send"

@@ -79,8 +79,29 @@ module Concierge
       @authority
     end
 
-    # Slot 6 — the kill switch. Checked at run start (and, once §10.6 lands, at
-    # proposal execution) so ops can halt one function without a deploy.
+    # This agent's **effective** authority on an action class — the one question
+    # the runtime should ever ask, because it folds in the legacy global flag.
+    #
+    # +config.draft_and_review+ is sugar for ":human_approval on the message
+    # action class" (§10.5) and only ever *tightens*: a host that flips it on
+    # while also declaring agents must not silently get autonomous sends back, and
+    # it must not loosen an agent that already gates harder. Reading
+    # +authority.level_for+ directly skips that, which is how the staging decision
+    # and the proposal's gate came to disagree.
+    def level_for(action_class)
+      level = authority.level_for(action_class)
+      return level unless action_class.to_s == Authority::MESSAGE_OUTREACH
+      return level unless Concierge.config.draft_and_review
+
+      level == :autonomous ? :human_approval : level
+    end
+
+    def autonomous?(action_class)
+      level_for(action_class) == :autonomous
+    end
+
+    # Slot 6 — the kill switch. Checked at run start and again at proposal
+    # execution (§10.6), so ops can halt one function without a deploy.
     def enabled(value = nil)
       @enabled = !!value unless value.nil?
       @enabled

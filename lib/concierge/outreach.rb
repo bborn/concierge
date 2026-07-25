@@ -12,6 +12,30 @@ module Concierge
       new(result, scope, channel: channel, kind: kind, governance: governance).deliver
     end
 
+    # The send itself, with the authority question already answered. #deliver asks
+    # it before reaching here; Proposal::Execute asks it of an *approved* row and
+    # then calls this. One door either way, so a message that went through a human
+    # is delivered and audited exactly like one that did not.
+    #
+    # Returns :delivered, :no_channel or :failed.
+    def self.dispatch(scope, payload, channel: nil, kind: "outreach", governance: Governance.new)
+      scope   = Scope.coerce(scope)
+      channel = Channel::Router.new.pick(scope.subject, preferred: channel)
+      return :no_channel unless channel
+
+      # Mint the unsubscribe token before delivery so the message can carry it,
+      # then record the audit row under the same token.
+      token   = Governance.generate_token
+      payload = payload.merge(unsubscribe_token: token)
+
+      if channel.deliver(payload)
+        governance.record!(scope, channel: channel.name, kind: kind, payload: payload, token: token)
+        :delivered
+      else
+        :failed
+      end
+    end
+
     def initialize(result, scope, channel:, kind:, governance:)
       @result     = result
       @scope      = Scope.coerce(scope)
@@ -29,24 +53,13 @@ module Concierge
       # Slot 4 — the authority envelope (§10.5). Anything short of :autonomous on
       # the message action class stages the send for a human instead of sending
       # it, so the disputes agent gates while the CSM stays autonomous-within-caps
-      # on the same mechanism. §10.6 generalizes this row into an AgentProposal
-      # over arbitrary action classes; today it is still the outbox.
-      return draft_to_outbox(payload) unless autonomous?
+      # on the same mechanism. The staged row is an AgentProposal over the
+      # "message.outreach" action class (§10.6) — the same object a record update
+      # or a refund is staged as.
+      return stage_proposal(payload) unless autonomous?
 
-      channel = Channel::Router.new.pick(subject, preferred: @preferred)
-      return :no_channel unless channel
-
-      # Mint the unsubscribe token before delivery so the message can carry it,
-      # then record the audit row under the same token.
-      token = Governance.generate_token
-      payload[:unsubscribe_token] = token
-
-      if channel.deliver(payload)
-        @governance.record!(@scope, channel: channel.name, kind: @kind, payload: payload, token: token)
-        :delivered
-      else
-        :failed
-      end
+      self.class.dispatch(@scope, payload, channel: @preferred, kind: @kind,
+                                           governance: @governance)
     end
 
     private
@@ -74,23 +87,25 @@ module Concierge
       false
     end
 
-    # The legacy global +draft_and_review+ only ever tightens. It is sugar for
-    # ":human_approval on the CSM's message class" (§10.5), and a host that flips
-    # it on while also declaring agents must not silently get autonomous sends
-    # back — a per-agent envelope may tighten further, never loosen past it.
+    # The *effective* level, which is Agent#level_for's job: the per-agent
+    # envelope with the legacy global +draft_and_review+ tightening folded in. Read
+    # through one method so the staging decision here and the gate snapshotted onto
+    # the proposal can never disagree about what this agent was allowed to do.
     def autonomous?
-      return false if Concierge.config.draft_and_review
-
-      @scope.agent.authority.autonomous?(Authority::MESSAGE_OUTREACH)
+      @scope.agent.autonomous?(Authority::MESSAGE_OUTREACH)
     end
 
-    def draft_to_outbox(payload)
-      OutboxItem.create!(
-        **@scope.key,
-        body:    payload[:body],
-        channel: @preferred&.to_s,
-        kind:    @kind,
-        state:   "pending"
+    # Stage the send as a proposal a human has to approve. The channel travels in
+    # the payload rather than being picked now: the approval may land hours later,
+    # and which channel can reach this account is a question worth asking at
+    # execution time.
+    def stage_proposal(payload)
+      Proposal.propose(
+        @scope,
+        action_class:     Authority::MESSAGE_OUTREACH,
+        payload:          payload.merge(channel: @preferred&.to_s).compact,
+        rule_ids_applied: (@result.rule_ids_applied if @result.respond_to?(:rule_ids_applied)),
+        agent_run:        (@result.run_record if @result.respond_to?(:run_record))
       )
       :drafted
     end

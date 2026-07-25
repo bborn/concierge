@@ -41,7 +41,8 @@ Concierge.configure do |config|
   config.budget = { per_tenant: 200_000, global: 5_000_000 } # daily token caps
 
   # 6. Autonomy. Concierge is autonomous within caps by default. Flip this on to
-  # route every send to an outbox for human approval instead.
+  # gate every agent's sends to human approval instead. (The general form is the
+  # per-agent `authority` block in 10 below; this flag only ever *tightens*.)
   # config.draft_and_review = true
 
   # 7. Guard the admin surface. Return truthy to allow.
@@ -72,7 +73,33 @@ Concierge.configure do |config|
   #     class: Concierge::RuleDreamingJob
   #     schedule: every sunday at 3am
 
-  # 9. More than one business function? Everything above is the implicit :csm
+  # 9. Proposals — actions an agent may propose but not perform. Anything its
+  # authority envelope does not make :autonomous stages as a Concierge::AgentProposal
+  # and waits on /concierge/admin/proposals. Maker-checker (the proposer can never
+  # approve), preconditions re-validated at execution, exactly-once execution.
+  #
+  # The engine dispatches `message.*` itself. Anything YOUR app owns needs an
+  # executor — and this is where engine authority ends and your invariants begin:
+  # the executor re-checks them on its own terms, so even a bug in the engine
+  # cannot get past your own guard.
+  #
+  # config.proposals do
+  #   execute("record.plan_change") { |proposal, scope| scope.subject.to_model.update!(proposal.action_arguments) }
+  #
+  #   # What the proposal assumed. Re-digested at execution; a mismatch refuses
+  #   # rather than acting on a decision that was about a different world.
+  #   precondition("record.plan_change") { |scope| { plan: scope.subject[:plan] } }
+  #
+  #   # Register by exact class, by prefix ("record.*") or "*". Most specific wins.
+  # end
+  #
+  # config.proposal_ttl      = 14.days                        # nil (default) = never expire
+  # config.proposal_notifier = ->(proposal) { Slack.post_card(proposal) }
+  #
+  # Expiry rides on the sweep you already registered above. Money should stay at
+  # :human_execution: the engine records the decision and never performs it.
+
+  # 10. More than one business function? Everything above is the implicit :csm
   # agent. Declare agents explicitly to run several over the same accounts, each
   # with its own persona, charter, tools, authority envelope, memory namespace
   # (the slug) and kill switch. State is keyed by (agent, account), so no agent

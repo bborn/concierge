@@ -145,8 +145,8 @@ module Concierge
       assert_equal :delivered, csm_status
       assert_equal :drafted,   billing_status
 
-      assert_equal 1, Concierge::OutboxItem.for_scope(@billing).pending.count
-      assert_equal 0, Concierge::OutboxItem.for_scope(@csm).pending.count
+      assert_equal 1, Concierge::AgentProposal.for_scope(@billing).proposed.count
+      assert_equal 0, Concierge::AgentProposal.for_scope(@csm).proposed.count
       assert_equal "csm", Concierge::ChannelDelivery.sole.agent_slug
     end
 

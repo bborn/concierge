@@ -10,12 +10,46 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_07_25_132940) do
+ActiveRecord::Schema[8.1].define(version: 2026_07_25_142134) do
   create_table "chats", force: :cascade do |t|
     t.datetime "created_at", null: false
     t.integer "model_id"
     t.datetime "updated_at", null: false
     t.index ["model_id"], name: "index_chats_on_model_id"
+  end
+
+  create_table "concierge_agent_proposals", force: :cascade do |t|
+    t.string "action_class", null: false
+    t.bigint "agent_run_id"
+    t.string "agent_slug", null: false
+    t.datetime "approved_at"
+    t.string "approved_by"
+    t.datetime "corrected_at"
+    t.string "corrected_by"
+    t.datetime "created_at", null: false
+    t.string "created_by"
+    t.datetime "executed_at"
+    t.string "executed_by"
+    t.text "execution_error"
+    t.datetime "execution_failed_at"
+    t.datetime "expires_at"
+    t.string "gate", null: false
+    t.string "idempotency_key"
+    t.text "original_payload"
+    t.text "payload"
+    t.string "precondition_digest"
+    t.datetime "proposed_at"
+    t.datetime "rejected_at"
+    t.string "rejected_by"
+    t.text "rejected_reason"
+    t.text "rule_ids_applied"
+    t.string "state", default: "proposed", null: false
+    t.string "subject_id", null: false
+    t.string "subject_type", null: false
+    t.datetime "updated_at", null: false
+    t.index ["agent_slug", "subject_type", "subject_id", "state"], name: "index_concierge_agent_proposals_on_scope_and_state"
+    t.index ["idempotency_key"], name: "index_concierge_agent_proposals_on_idempotency_key", unique: true
+    t.index ["state", "expires_at"], name: "index_concierge_agent_proposals_on_state_and_expiry"
   end
 
   create_table "concierge_agent_rule_revisions", force: :cascade do |t|
@@ -143,19 +177,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_25_132940) do
     t.datetime "updated_at", null: false
     t.index ["agent_slug", "subject_type", "subject_id", "active", "category"], name: "index_concierge_memories_on_scope_active_category"
     t.index ["agent_slug", "subject_type", "subject_id", "updated_at"], name: "index_concierge_memories_on_scope_recency"
-  end
-
-  create_table "concierge_outbox_items", force: :cascade do |t|
-    t.string "agent_slug", null: false
-    t.text "body"
-    t.string "channel"
-    t.datetime "created_at", null: false
-    t.string "kind", default: "outreach", null: false
-    t.string "state", default: "pending", null: false
-    t.string "subject_id", null: false
-    t.string "subject_type", null: false
-    t.datetime "updated_at", null: false
-    t.index ["agent_slug", "subject_type", "subject_id", "state"], name: "index_concierge_outbox_on_scope_and_state"
   end
 
   create_table "concierge_outreach_preferences", force: :cascade do |t|

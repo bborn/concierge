@@ -7,6 +7,11 @@ module Concierge
     queue_as :default
 
     def perform(now: Time.current)
+      # Retire proposals nobody acted on in time (§10.6). Inert unless the host set
+      # config.proposal_ttl, and it lives here rather than in a job of its own so
+      # expiry arrives with the one recurring entry a host already registered.
+      Concierge::Proposal.expire_stale!(now: now)
+
       budget = Concierge::Budget.new
       candidates = Concierge::PriorityService.order(due_routines(now)) { |c| c[:scope].subject }
 
