@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_07_19_133446) do
+ActiveRecord::Schema[8.1].define(version: 2026_07_19_133447) do
   create_table "chats", force: :cascade do |t|
     t.datetime "created_at", null: false
     t.integer "model_id"
@@ -19,16 +19,18 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_19_133446) do
   end
 
   create_table "concierge_budget_ledgers", force: :cascade do |t|
+    t.string "agent_slug", null: false
     t.datetime "created_at", null: false
     t.string "subject_id", null: false
     t.string "subject_type", null: false
     t.integer "tokens_spent", default: 0, null: false
     t.datetime "updated_at", null: false
     t.date "window_on", null: false
-    t.index ["subject_type", "subject_id", "window_on"], name: "index_concierge_budget_ledgers_on_subject_window", unique: true
+    t.index ["agent_slug", "subject_type", "subject_id", "window_on"], name: "index_concierge_budget_ledgers_on_scope_window", unique: true
   end
 
   create_table "concierge_channel_deliveries", force: :cascade do |t|
+    t.string "agent_slug", null: false
     t.string "channel", null: false
     t.datetime "created_at", null: false
     t.string "kind", default: "outreach", null: false
@@ -38,11 +40,13 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_19_133446) do
     t.string "subject_type", null: false
     t.string "unsubscribe_token"
     t.datetime "updated_at", null: false
+    t.index ["agent_slug", "subject_type", "subject_id", "sent_at"], name: "index_concierge_deliveries_on_scope_and_sent_at"
     t.index ["subject_type", "subject_id", "sent_at"], name: "index_concierge_deliveries_on_subject_and_sent_at"
     t.index ["unsubscribe_token"], name: "index_concierge_deliveries_on_unsubscribe_token", unique: true
   end
 
   create_table "concierge_conversations", force: :cascade do |t|
+    t.string "agent_slug", null: false
     t.integer "chat_id", null: false
     t.datetime "created_at", null: false
     t.string "grain", default: "account", null: false
@@ -51,10 +55,11 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_19_133446) do
     t.string "subject_id", null: false
     t.string "subject_type", null: false
     t.datetime "updated_at", null: false
-    t.index ["subject_type", "subject_id"], name: "index_concierge_conversations_on_subject", unique: true
+    t.index ["agent_slug", "subject_type", "subject_id"], name: "index_concierge_conversations_on_scope", unique: true
   end
 
   create_table "concierge_handoffs", force: :cascade do |t|
+    t.string "agent_slug", null: false
     t.datetime "created_at", null: false
     t.string "operator"
     t.datetime "released_at"
@@ -63,11 +68,12 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_19_133446) do
     t.string "subject_id", null: false
     t.string "subject_type", null: false
     t.datetime "updated_at", null: false
-    t.index ["subject_type", "subject_id", "state"], name: "index_concierge_handoffs_on_subject_and_state"
+    t.index ["agent_slug", "subject_type", "subject_id", "state"], name: "index_concierge_handoffs_on_scope_and_state"
   end
 
   create_table "concierge_memories", force: :cascade do |t|
     t.boolean "active", default: true, null: false
+    t.string "agent_slug", null: false
     t.text "body"
     t.string "category"
     t.datetime "created_at", null: false
@@ -77,11 +83,12 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_19_133446) do
     t.string "subject_type", null: false
     t.string "tier", default: "account", null: false
     t.datetime "updated_at", null: false
-    t.index ["subject_type", "subject_id", "active", "category"], name: "index_concierge_memories_on_subject_active_category"
-    t.index ["subject_type", "subject_id", "updated_at"], name: "index_concierge_memories_on_subject_recency"
+    t.index ["agent_slug", "subject_type", "subject_id", "active", "category"], name: "index_concierge_memories_on_scope_active_category"
+    t.index ["agent_slug", "subject_type", "subject_id", "updated_at"], name: "index_concierge_memories_on_scope_recency"
   end
 
   create_table "concierge_outbox_items", force: :cascade do |t|
+    t.string "agent_slug", null: false
     t.text "body"
     t.string "channel"
     t.datetime "created_at", null: false
@@ -90,7 +97,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_19_133446) do
     t.string "subject_id", null: false
     t.string "subject_type", null: false
     t.datetime "updated_at", null: false
-    t.index ["subject_type", "subject_id", "state"], name: "index_concierge_outbox_on_subject_and_state"
+    t.index ["agent_slug", "subject_type", "subject_id", "state"], name: "index_concierge_outbox_on_scope_and_state"
   end
 
   create_table "concierge_outreach_preferences", force: :cascade do |t|
@@ -106,6 +113,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_19_133446) do
   end
 
   create_table "concierge_routines", force: :cascade do |t|
+    t.string "agent_slug", null: false
     t.string "author", default: "agent", null: false
     t.string "channel"
     t.datetime "created_at", null: false
@@ -116,8 +124,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_19_133446) do
     t.string "subject_id", null: false
     t.string "subject_type", null: false
     t.datetime "updated_at", null: false
+    t.index ["agent_slug", "subject_type", "subject_id"], name: "index_concierge_routines_on_scope"
     t.index ["enabled", "next_run_at"], name: "index_concierge_routines_on_enabled_and_next_run_at"
-    t.index ["subject_type", "subject_id"], name: "index_concierge_routines_on_subject"
   end
 
   create_table "messages", force: :cascade do |t|

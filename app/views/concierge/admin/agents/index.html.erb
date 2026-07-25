@@ -1,0 +1,80 @@
+<h1>Agents</h1>
+
+<p>
+  Identity is <strong>(Agent&nbsp;×&nbsp;Subject)</strong>: every memory, conversation,
+  routine, delivery and handoff below is keyed by the pair, so no agent can read
+  another's notes about the same account.
+</p>
+
+<% @agents.each do |agent| %>
+  <h2><%= agent.slug %><%= " — off" unless agent.enabled? %></h2>
+
+  <table>
+    <tbody>
+      <tr>
+        <th>Persona</th>
+        <td>
+          <%= agent.playbook.persona.name || "(unnamed)" %>
+          <% if agent.playbook.persona.voice %> — <%= agent.playbook.persona.voice %><% end %>
+        </td>
+      </tr>
+      <tr>
+        <th>Model</th>
+        <td><%= agent.model || "#{Concierge.config.default_model} (house default)" %></td>
+      </tr>
+      <tr>
+        <th>Charter</th>
+        <td>
+          <%= agent.playbook.product_brief %>
+          <% if agent.playbook.engagement_signals.any? %>
+            <br>Signals: <%= agent.playbook.engagement_signals.keys.join(", ") %>
+          <% end %>
+        </td>
+      </tr>
+      <tr>
+        <th>Tool scope</th>
+        <td>
+          <% if agent.capabilities.entries.any? %>
+            <%= agent.capabilities.entries.map { |e| "#{e.tool_class.name.demodulize} (#{e.access})" }.join(", ") %>
+          <% else %>
+            none
+          <% end %>
+        </td>
+      </tr>
+      <tr>
+        <th>Authority</th>
+        <td>
+          default <%= agent.authority.default %>
+          <% agent.authority.actions.each do |action_class, level| %>
+            &middot; <%= action_class %> <%= level %>
+          <% end %>
+        </td>
+      </tr>
+      <tr>
+        <th>Memory namespace</th>
+        <td><code><%= agent.memory_namespace %></code></td>
+      </tr>
+      <tr>
+        <th>Kill switch</th>
+        <td><%= agent.enabled? ? "enabled" : "DISABLED — runs are suppressed" %></td>
+      </tr>
+      <tr>
+        <th>State owned</th>
+        <td>
+          <%= @memories.fetch(agent.memory_namespace, 0) %> memories &middot;
+          <%= @conversations.fetch(agent.memory_namespace, 0) %> conversations &middot;
+          <%= @routines.fetch(agent.memory_namespace, 0) %> routines &middot;
+          <%= @deliveries.fetch(agent.memory_namespace, 0) %> deliveries
+        </td>
+      </tr>
+    </tbody>
+  </table>
+<% end %>
+
+<h2>Shared namespace</h2>
+<p>
+  <code><%= Concierge::Scope::SHARED %></code> holds
+  <%= @memories.fetch(Concierge::Scope::SHARED, 0) %> memories — facts about the
+  relationship every agent on that account legitimately reads. Writing there is an
+  explicit opt-in; reading is automatic.
+</p>

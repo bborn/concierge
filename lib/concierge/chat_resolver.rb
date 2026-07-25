@@ -1,19 +1,21 @@
 module Concierge
-  # Finds or creates the persistent host Chat for a Subject, going through the
-  # Conversation mapping table. This is the one place account↔chat scoping lives,
-  # so the run harness never has to reason about it.
+  # Finds or creates the persistent host Chat for an (Agent × Subject) scope,
+  # going through the Conversation mapping table. This is the one place
+  # agent↔account↔chat scoping lives, so the run harness never has to reason
+  # about it. Two agents over one account hold two conversations — sharing one
+  # would put every turn of the CSM's thread into the other agent's context.
   class ChatResolver
-    def self.call(subject, model: nil)
-      new(subject, model: model).call
+    def self.call(scope, model: nil)
+      new(scope, model: model).call
     end
 
-    def initialize(subject, model: nil)
-      @subject = subject
-      @model   = model || Concierge.config.default_model
+    def initialize(scope, model: nil)
+      @scope = Scope.coerce(scope)
+      @model = model || @scope.agent.model || Concierge.config.default_model
     end
 
     def call
-      conversation = Conversation.find_by_subject(@subject) || create_conversation
+      conversation = Conversation.find_by_scope(@scope) || create_conversation
       conversation.chat_record
     end
 
@@ -23,7 +25,7 @@ module Concierge
       chat = Concierge.chat_model.new
       pin_model(chat)
       chat.save!
-      Conversation.create!(**@subject.key, grain: @subject.grain.to_s, chat_id: chat.id)
+      Conversation.create!(**@scope.key, grain: @scope.subject.grain.to_s, chat_id: chat.id)
     end
 
     # Pin the Chat to Concierge's configured model. This matters because

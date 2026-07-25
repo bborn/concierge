@@ -4,32 +4,47 @@ module Concierge
   # global safety rail is exhausted. Caps come from config.budget
   # ({ per_tenant:, global: }); a per-account override raises one account's cap
   # while the global rail still binds.
+  # Spend is *attributed* per (agent, subject) so an operator can see which
+  # business function burned the tokens, but the per-tenant **cap** is still read
+  # across every agent: a tenant's daily cap is the tenant's, and per-agent caps
+  # would let N agents each spend it. Same rule as the governance rails — the
+  # customer-facing limits are per-customer, the namespaces are per-agent.
   class Budget
     # The ledger key every account's spend also rolls up into (the safety rail).
-    GLOBAL = { subject_type: "global", subject_id: "global" }.freeze
+    # It belongs to no agent, so it carries its own reserved namespace.
+    GLOBAL_AGENT_SLUG = "_global".freeze
+    GLOBAL = { agent_slug: GLOBAL_AGENT_SLUG, subject_type: "global", subject_id: "global" }.freeze
 
     def initialize(ledger_model: Concierge::BudgetLedger, today: nil)
       @ledger = ledger_model
       @today  = today
     end
 
-    # Record tokens spent on a subject's run (also counts toward the global rail).
-    def spend!(subject, tokens)
+    # Record tokens spent on one agent's run for a subject (also counts toward
+    # the global rail).
+    def spend!(scope, tokens)
       return if tokens.to_i.zero?
 
-      [ subject.key, GLOBAL ].each { |key| bump(key, tokens) }
+      [ Scope.coerce(scope).key, GLOBAL ].each { |key| bump(key, tokens) }
     end
 
     # Would another run for this subject exceed a cap?
-    def exhausted?(subject)
+    def exhausted?(scope)
       budget = Concierge.config.budget
       return false unless budget
 
-      over?(subject.key, cap_for(subject, budget)) || over?(GLOBAL, budget[:global])
+      subject = Scope.coerce(scope).subject
+      over?(Scope.subject_key(scope), cap_for(subject, budget)) || over?(GLOBAL, budget[:global])
     end
 
+    # This subject's spend today, across every agent.
     def spent_for(subject)
-      spent(subject.key)
+      spent(Scope.subject_key(subject))
+    end
+
+    # One agent's share of it.
+    def spent_for_scope(scope)
+      spent(Scope.coerce(scope).key)
     end
 
     private

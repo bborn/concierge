@@ -48,5 +48,19 @@ module Concierge
       status = Outreach.deliver(Concierge::Result.new(reply_text: "a proactive nudge"), @subject, channel: :in_app)
       assert_equal :delivered, status
     end
+
+    test "the legacy draft_and_review flag still tightens a pluralized host" do
+      # §10.5 makes the flag sugar for ":human_approval on the CSM's message
+      # class". A host that flips it on and *also* declares agents must not
+      # silently get autonomous sends back — the flag may only tighten.
+      Concierge::Test.configure_agents!
+      Concierge.config.draft_and_review = true
+      scope = Concierge::Scope.new(Concierge.config.agent(:csm), @subject)
+
+      assert_equal :autonomous, Concierge.config.agent(:csm).authority.level_for("message.outreach")
+      assert_equal :drafted,
+                   Outreach.deliver(Concierge::Result.new(reply_text: "a nudge"), scope, channel: :in_app)
+      assert_equal 1, OutboxItem.for_scope(scope).pending.count
+    end
   end
 end

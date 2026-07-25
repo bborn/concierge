@@ -1,11 +1,12 @@
 <h1>Memories</h1>
 <table>
   <thead>
-    <tr><th>Account</th><th>Source</th><th>Category</th><th>Body</th><th>Pinned</th><th></th></tr>
+    <tr><th>Agent</th><th>Account</th><th>Source</th><th>Category</th><th>Body</th><th>Pinned</th><th></th></tr>
   </thead>
   <tbody>
     <% @memories.each do |m| %>
       <tr>
+        <td><%= m.agent_slug %></td>
         <td><%= m.subject_type %>#<%= m.subject_id %></td>
         <td><%= m.source %></td>
         <td><%= m.category %></td>

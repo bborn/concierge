@@ -1,39 +1,48 @@
 module Concierge
-  # One turn of the customer success agent for a single account: assembles the
-  # prompt (CSM role + product brief + fresh Snapshot + top-of-mind memory),
-  # attaches the account-scoped tools, drives one +chat.ask+ on the subject's
-  # persistent Chat, and returns a structured Result. It never raises out to the
-  # caller — a provider error mid-stream comes back as a failed Result.
+  # One turn of one agent for a single account: assembles the prompt (the agent's
+  # role/persona + product brief + fresh Snapshot + top-of-mind memory), attaches
+  # that agent's tools and only that agent's, drives one +chat.ask+ on the
+  # (agent, subject) persistent Chat, and returns a structured Result. It never
+  # raises out to the caller — a provider error mid-stream comes back as a failed
+  # Result.
   #
-  # Reactive path (customer message → reply) ships here; the proactive path lands
-  # in Phase 7.
+  # Both entry points take a Scope or a bare Subject; a bare Subject is coerced
+  # onto the default +:csm+ agent, so a single-agent host's call sites are
+  # unchanged (design §10.9).
   class Run
-    def self.reactive(subject, message)
-      new(subject, trigger: { type: :reactive, message: message }).call
+    def self.reactive(scope, message)
+      new(scope, trigger: { type: :reactive, message: message }).call
     end
 
     # Proactive turn framed by a trigger (a routine or lifecycle event). The
     # instruction shapes what the agent reaches out about; there is no inbound
     # customer message.
-    def self.proactive(subject, instruction:)
-      new(subject, trigger: { type: :proactive, instruction: instruction,
-                              message: instruction }).call
+    def self.proactive(scope, instruction:)
+      new(scope, trigger: { type: :proactive, instruction: instruction,
+                            message: instruction }).call
     end
 
-    def initialize(subject, trigger:)
-      @subject = subject
+    def initialize(scope, trigger:)
+      @scope   = Scope.coerce(scope)
       @trigger = trigger
       @config  = Concierge.config
     end
 
+    attr_reader :scope
+
     def call
-      # Control is takeover, not gating: while a human holds the thread, suppress
-      # autonomous proactive sends (design §0.8). Reactive turns still answer.
-      if @trigger[:type] == :proactive && Handoff.active_for(@subject)&.active?
+      # Slot 6: the kill switch. Ops can halt one business function without
+      # touching the others, and without a deploy.
+      return Result.suppressed(reason: "agent #{agent.slug.inspect} is disabled") unless agent.enabled?
+
+      # Control is takeover, not gating: while a human holds *this agent's*
+      # thread, suppress autonomous proactive sends (design §0.8). Reactive turns
+      # still answer, and a takeover on one agent does not silence another.
+      if @trigger[:type] == :proactive && Handoff.active_for(@scope)&.active?
         return Result.suppressed(reason: "human has taken over this thread")
       end
 
-      chat_record = ChatResolver.call(@subject, model: model)
+      chat_record = ChatResolver.call(@scope, model: model)
       chat = build_chat(chat_record)
       chat.with_instructions(system_prompt)
       attach_tools(chat)
@@ -46,21 +55,34 @@ module Concierge
       Result.failure(e, model: model)
     end
 
+    def agent
+      @scope.agent
+    end
+
     private
 
+    def subject
+      @scope.subject
+    end
+
+    # The agent's own model when it named one, else the house default.
     def model
-      @model ||= @config.default_model
+      @model ||= agent.model || @config.default_model
     end
 
     def build_chat(chat_record)
       @config.chat_factory.call(model: model, chat_record: chat_record)
     end
 
+    # Slot 3 — this agent's tools, and only this agent's, each bound to the scope
+    # so a tool call mid-run cannot write outside the agent's namespace. A tool
+    # that is off-scope for this agent was never registered, so it does not exist
+    # in this loop rather than existing and erroring.
     def attach_tools(chat)
-      registry = @config.capabilities
+      registry = agent.capabilities
       return unless registry
 
-      tools = registry.tools_for(@subject, self)
+      tools = registry.tools_for(subject, self, scope: @scope)
       chat.with_tools(*tools) if tools.any?
     end
 
@@ -74,26 +96,30 @@ module Concierge
     end
 
     def role_line
-      persona = playbook&.persona
-      line = "You are #{persona&.name || 'the customer success manager'}, " \
-             "an always-on customer success manager for this account."
-      line += " Your voice is #{persona.voice}." if persona&.voice
+      persona = playbook.persona
+      line = "You are #{persona.name || 'the customer success manager'}, " \
+             "the #{agent.slug} agent for this account."
+      line += " Your voice is #{persona.voice}." if persona.voice
       line
     end
 
     def product_brief
-      brief = playbook&.product_brief
+      brief = playbook.product_brief
       "About the product:\n#{brief}" if brief
     end
 
+    # An agent does not get a different *account*; it gets a different view of
+    # one — its own engagement signals over the same subject. So the Snapshot
+    # stays subject-keyed and takes this agent's playbook, and two agents over one
+    # account legitimately produce two different digests.
     def snapshot_block
-      return unless playbook
+      return if playbook.engagement_signals.empty?
 
-      Snapshot.for(@subject).to_prompt
+      Snapshot.for(subject, playbook: playbook).to_prompt
     end
 
     def memory_block
-      memories = context_store.top_of_mind(@subject)
+      memories = context_store.top_of_mind(@scope)
       return if memories.empty?
 
       "What you already know about this account:\n" +
@@ -117,7 +143,7 @@ module Concierge
     end
 
     def playbook
-      @config.playbook
+      agent.playbook
     end
 
     def context_store

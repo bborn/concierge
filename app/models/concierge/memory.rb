@@ -9,7 +9,7 @@ module Concierge
   # sparse notes through the tool loop, and a persistence trap here would raise
   # mid-run. Keep validations off body.
   class Memory < ApplicationRecord
-    include SubjectScoped
+    include AgentScoped
 
     TIERS   = %w[account subject].freeze
     SOURCES = %w[agent human].freeze

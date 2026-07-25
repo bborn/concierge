@@ -19,7 +19,12 @@ module Concierge
       @now        = now
     end
 
-    # May we send this kind to this subject right now?
+    # May we send this kind to this subject right now? Takes a Scope or a bare
+    # Subject, but every rule here is deliberately read at the *subject* level:
+    # the customer has one inbox, one opt-out, and one quiet-hours window, and
+    # per-agent frequency caps would let two agents each send "within cap" while
+    # the customer got twice as much mail. Content namespaces are per-agent
+    # (§10.3); the governance rails are per-customer.
     def allow?(subject, kind: "outreach")
       pref = OutreachPreference.for(subject)
       return false if pref.opted_out
@@ -38,12 +43,12 @@ module Concierge
       payload[:body].to_s.strip.length.positive?
     end
 
-    # Record a send (audit + the frequency-cap ledger). Returns the row. The
-    # unsubscribe token is generated here unless the caller minted one earlier
-    # (email needs it before the send).
-    def record!(subject, channel:, kind: "outreach", payload: {}, token: nil)
+    # Record a send (audit + the frequency-cap ledger), attributed to the agent
+    # that sent it. Returns the row. The unsubscribe token is generated here
+    # unless the caller minted one earlier (email needs it before the send).
+    def record!(scope, channel:, kind: "outreach", payload: {}, token: nil)
       @deliveries.create!(
-        **subject.key,
+        **Scope.coerce(scope).key,
         channel:           channel.to_s,
         kind:              kind.to_s,
         sent_at:           now,
@@ -80,7 +85,8 @@ module Concierge
       return false if pref.frequency == "off"
       return true  if window.nil?
 
-      last = @deliveries.for_subject(subject).of_kind(kind).maximum(:sent_at)
+      # Across every agent, on purpose — see #allow?.
+      last = @deliveries.where(Scope.subject_key(subject)).of_kind(kind).maximum(:sent_at)
       last.nil? || (now - last) >= window
     end
 

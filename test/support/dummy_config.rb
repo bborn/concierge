@@ -52,14 +52,14 @@ module Concierge
       end
     end
 
-    # Phase 10 step-0 spike only. Deliberately NOT part of the baseline above:
-    # every existing test keeps running against the single-agent configuration,
-    # which is how we know the plural DSL is inert until a host opts in. Mirrors
+    # The pluralized form of the same host: two business functions over the same
+    # Tenants. Deliberately NOT part of the baseline above — every other test
+    # keeps running against the *single-agent* configuration, which is how we
+    # know the §10.9 back-compat path (top-level blocks fold into an implicit
+    # :csm agent) is exercised on every run rather than assumed. Mirrors
     # test/dummy/config/initializers/concierge.rb.
     def self.configure_agents!
       Concierge.configure do |c|
-        c.multi_agent_spike = true
-
         c.agent :csm do
           persona name: "Kit", voice: "warm, concise, never pushy"
 

@@ -1,8 +1,13 @@
 # Concierge configuration for the dummy host app.
 #
-# This mirrors test/support/dummy_config.rb (the canonical example config) but
-# also runs under `bin/rails server`, so the engine's admin surface and chat
-# endpoint can be exercised by hand. See db/seeds.rb for sample data.
+# Runs under `bin/rails server`, so the engine's admin surface and chat endpoint
+# can be exercised by hand. See db/seeds.rb for sample data.
+#
+# This host is *pluralized*: it declares two business functions over the same
+# Tenants (design §10.1). The single-agent form — top-level `playbook` and
+# `capabilities` with no `agent` block at all — is what
+# test/support/dummy_config.rb configures, so the suite keeps exercising the
+# back-compat path on every run.
 
 Rails.application.config.to_prepare do
   Concierge.configure do |c|
@@ -24,29 +29,6 @@ Rails.application.config.to_prepare do
       scope(:users)    { |t| t.users }
     end
 
-    c.playbook do
-      product_brief "Acme helps teams publish changelogs."
-      goals "Get each account to publish their first changelog and upgrade."
-      account_types :brand, :creator
-
-      engagement_signal(:has_paid_plan) { |s| %w[pro enterprise].include?(s[:plan]) }
-      engagement_signal(:user_count)    { |s| s.scope_for(:users).count }
-      engagement_signal(:days_since_active) do |s|
-        last = s.to_model.last_active_at
-        last ? ((Time.current - last) / 1.day).floor : nil
-      end
-
-      persona name: "Kit", voice: "warm, concise, never pushy"
-    end
-
-    c.capabilities do
-      register Concierge::Tools::RecallTool,                access: :read
-      register Concierge::Tools::RememberTool,              access: :write
-      register Concierge::Tools::ForgetTool,                access: :write
-      register Concierge::Tools::SetOutreachPreferenceTool, access: :write
-      register Concierge::Tools::RoutineTool,               access: :write
-    end
-
     c.channels          = [ Concierge::Channel::InApp, Concierge::Channel::Email ]
     c.email_address_for = ->(subject) { subject.to_model.users.first&.email }
     c.mailer_host       = "localhost:3000"
@@ -59,10 +41,9 @@ Rails.application.config.to_prepare do
     c.weekly_review_instruction = "Review this account and reach out if something is worth their attention."
     c.priority = ->(subject) { subject[:plan] == "enterprise" ? 100 : 1 }
 
-    # --- Phase 10 step 0 spike: a second business function over the same Tenants.
-    # Throwaway. Everything above stays exactly as it was — the :csm agent below
-    # is the same configuration, said in the plural form. See Concierge::Spike.
-    c.multi_agent_spike = true
+    # --- Two business functions over the same Tenants (design §10.1) ----------
+    # Each agent block carries the six slots: identity/persona/model, charter,
+    # tool scope, authority envelope, memory namespace (the slug), kill switch.
 
     c.agent :csm do
       persona name: "Kit", voice: "warm, concise, never pushy"
@@ -70,8 +51,13 @@ Rails.application.config.to_prepare do
       playbook do
         product_brief "Acme helps teams publish changelogs."
         goals "Get each account to publish their first changelog and upgrade."
+        account_types :brand, :creator
         engagement_signal(:has_paid_plan) { |s| %w[pro enterprise].include?(s[:plan]) }
         engagement_signal(:user_count)    { |s| s.scope_for(:users).count }
+        engagement_signal(:days_since_active) do |s|
+          last = s.to_model.last_active_at
+          last ? ((Time.current - last) / 1.day).floor : nil
+        end
       end
 
       capabilities do

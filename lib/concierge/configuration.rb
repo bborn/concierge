@@ -73,16 +73,9 @@ module Concierge
     # fails closed rather than shipping an open dashboard).
     attr_accessor :authenticate_admin
 
-    # --- Multi-agent spike (Phase 10, step 0 — throwaway; see Concierge::Spike) ---
-
-    # Turns on the (Agent × Subject) prototype: the plural +agent+ DSL below still
-    # parses without it, but nothing in the engine acts on it. Off by default.
-    attr_accessor :multi_agent_spike
-
     def initialize
       @chat_model_name  = "Chat"
       @draft_and_review = false
-      @multi_agent_spike = false
       @chat_factory     = DEFAULT_CHAT_FACTORY
       @agents           = {}
     end
@@ -143,7 +136,7 @@ module Concierge
       slug = slug.to_sym
 
       if block
-        found = (@agents[slug] ||= Spike::Agent.new(slug))
+        found = (@agents[slug] ||= Agent.new(slug))
         found.instance_eval(&block)
         return found
       end
@@ -171,26 +164,42 @@ module Concierge
       end
     end
 
+    # The migration bridge (§10.9): a host that never called +config.agent+ *is*
+    # the CSM, so the top-level blocks are read as that agent's slots. Every slot
+    # reads through to the Configuration at call time rather than being copied at
+    # build time, so a host that keeps configuring after the first read (an
+    # initializer sets +draft_and_review+ late, say) can never see a stale
+    # envelope — the staleness the step-0 spike flagged in its §D5.
+    class ImplicitCsmAgent < Agent
+      def initialize(config)
+        super(DEFAULT_AGENT_SLUG)
+        @config = config
+      end
+
+      def playbook(&block)
+        book = @config.playbook || (@playbook ||= Concierge::Playbook.new)
+        book.instance_eval(&block) if block
+        book
+      end
+
+      def capabilities(&block)
+        @config.capabilities(&block)
+      end
+
+      # draft_and_review was "stage the one outreach action for a human"; that is
+      # exactly :human_approval on the message action class.
+      def authority(&block)
+        envelope = super
+        envelope.action(Authority::MESSAGE_OUTREACH,
+                        @config.draft_and_review ? :human_approval : :autonomous)
+        envelope
+      end
+    end
+
     private
 
-    # The migration bridge (§10.9): the existing top-level blocks *are* the CSM.
-    # Built lazily and memoized so `config.agent(:csm).playbook` reads back the
-    # very same Playbook object `config.playbook` returns — no copy to drift.
     def implicit_csm_agent
-      @implicit_csm_agent ||= begin
-        top_level_playbook     = @playbook
-        top_level_capabilities = capabilities
-        # draft_and_review was "stage the one outreach action for a human"; that
-        # is exactly :human_approval on the message action class.
-        outreach_level = @draft_and_review ? :human_approval : :autonomous
-
-        Spike::Agent.new(DEFAULT_AGENT_SLUG).tap do |a|
-          a.instance_variable_set(:@playbook, top_level_playbook) if top_level_playbook
-          a.instance_variable_set(:@capabilities, top_level_capabilities)
-          a.instance_variable_set(:@model, @default_model)
-          a.authority { action "message.outreach", outreach_level }
-        end
-      end
+      @implicit_csm_agent ||= ImplicitCsmAgent.new(self)
     end
   end
 end

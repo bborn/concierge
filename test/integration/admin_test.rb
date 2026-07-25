@@ -33,4 +33,48 @@ class AdminTest < ActionDispatch::IntegrationTest
     get "/concierge/admin/deliveries"
     assert_response :success
   end
+
+  test "the memory list shows which agent owns each note" do
+    Concierge.config.authenticate_admin = ->(_c) { true }
+    Concierge::Test.configure_agents!
+    subject = Concierge.config.account.build(@tenant)
+    Concierge::ContextStore.new.remember(
+      Concierge::Scope.new(Concierge.config.agent(:billing), subject),
+      body: "card on file expires in March"
+    )
+
+    get "/concierge/admin/memories"
+
+    assert_response :success
+    assert_select "th", "Agent"
+    assert_select "td", "billing"
+  end
+
+  test "the agents screen lists every declared agent with its six slots" do
+    Concierge.config.authenticate_admin = ->(_c) { true }
+    Concierge::Test.configure_agents!
+
+    get "/concierge/admin/agents"
+
+    assert_response :success
+    %w[csm billing Kit Bill].each { |text| assert_includes response.body, text }
+    assert_includes response.body, "money.refund"        # billing's authority envelope
+    assert_includes response.body, "RecallTool (read)"   # its tool scope
+    assert_includes response.body, Concierge::Scope::SHARED
+  end
+
+  test "the agents screen shows an un-pluralized host as the implicit csm agent" do
+    Concierge.config.authenticate_admin = ->(_c) { true }
+
+    get "/concierge/admin/agents"
+
+    assert_response :success
+    assert_includes response.body, "csm"
+    refute_includes response.body, "billing"
+  end
+
+  test "the agents screen fails closed like every other admin screen" do
+    get "/concierge/admin/agents"
+    assert_response :forbidden
+  end
 end
