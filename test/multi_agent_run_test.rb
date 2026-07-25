@@ -69,6 +69,19 @@ module Concierge
       assert_equal %w[recall remember], billing_tools.sort
     end
 
+    test "every tool a run hands the model is bound to that run's scope" do
+      # Binding is what stops a tool call mid-run from writing outside its
+      # agent's namespace, so assert it on the objects themselves rather than
+      # only through one tool's side effect.
+      Concierge::Test::FakeChat.script(reply: "ok")
+      Concierge::Run.proactive(@billing, instruction: "invoice review")
+
+      tools = Concierge::Test::FakeChat.current.tools
+      assert tools.any?
+      assert tools.all? { |t| t.scope == @billing },
+             "a tool was handed the model without its agent's scope"
+    end
+
     test "a tool call during a run writes into that agent's namespace only" do
       Concierge::Test::FakeChat.script(
         reply: "Noted.",
