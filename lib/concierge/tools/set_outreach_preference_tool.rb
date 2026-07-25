@@ -14,6 +14,10 @@ module Concierge
         "set_outreach_preference"
       end
 
+      # Deliberately keyed by the Subject, not the (Agent × Subject) Scope: "email
+      # me less" is the *customer's* preference about being contacted at all, not
+      # one agent's private setting. concierge_outreach_preferences is one of the
+      # tables design §10.1 leaves out of the agent dimension.
       def perform(frequency:)
         frequency = frequency.to_s
         unless Concierge::OutreachPreference::FREQUENCIES.include?(frequency)

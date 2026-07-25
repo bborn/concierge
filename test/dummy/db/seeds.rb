@@ -83,6 +83,35 @@ Concierge::OutreachPreference.create!(**subject_for(initech).key, opted_out: tru
 
 Concierge::Handoff.seize!(subject_for(globex), operator: "bruno@acme.test")
 
+# --- Phase 10 step-0 spike: namespaced memory for two agents over one account --
+# Throwaway. The spike has no agent_slug column, so the namespace is folded into
+# subject_type ("csm/account"). Visible at /concierge/admin/spike.
+
+if Concierge.config.multi_agent_spike
+  def spike_scope(slug, tenant) = Concierge::Spike.scope_for(slug, subject_for(tenant))
+
+  store = Concierge::Spike::MemoryStore.new
+
+  store.remember(spike_scope(:csm, acme), source: :human, pinned: true,
+    body: "Dana is the champion here. CEO is skeptical of AI tooling — keep it low-key.")
+  store.remember(spike_scope(:csm, acme), category: "goal",
+    body: "Wants to publish a changelog before their Q3 launch.")
+  store.remember(spike_scope(:billing, acme), category: "billing",
+    body: "Card on file expires in March; no backup payment method.")
+  store.remember(spike_scope(:billing, acme), category: "billing",
+    body: "Invoice #4471 was disputed in May and resolved in their favour.")
+  store.remember(spike_scope(:csm, acme), shared: true, source: :human,
+    body: "Acme is an EU entity — GDPR data-processing addendum applies.")
+
+  store.remember(spike_scope(:billing, globex), category: "billing",
+    body: "Procurement pays by wire, net-30. Never auto-charge this account.")
+  store.remember(spike_scope(:csm, globex), category: "goal",
+    body: "Rolling out to 4 more teams next quarter.")
+
+  puts "Spike: #{Concierge.config.agents.map(&:slug).join(' + ')} agents, " \
+       "namespaces #{Concierge::Memory.where("subject_type LIKE '%/%'").distinct.pluck(:subject_type).sort.join(', ')}."
+end
+
 puts "Seeded #{Tenant.count} accounts, #{Concierge::Memory.count} memories, " \
      "#{Concierge::Routine.count} routines, #{Concierge::ChannelDelivery.count} deliveries."
 puts "Unsubscribe link to try: /concierge/unsubscribe/#{Concierge::ChannelDelivery.last.unsubscribe_token}"

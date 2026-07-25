@@ -58,6 +58,60 @@ Rails.application.config.to_prepare do
     c.weekly_review_enabled     = true
     c.weekly_review_instruction = "Review this account and reach out if something is worth their attention."
     c.priority = ->(subject) { subject[:plan] == "enterprise" ? 100 : 1 }
+
+    # --- Phase 10 step 0 spike: a second business function over the same Tenants.
+    # Throwaway. Everything above stays exactly as it was — the :csm agent below
+    # is the same configuration, said in the plural form. See Concierge::Spike.
+    c.multi_agent_spike = true
+
+    c.agent :csm do
+      persona name: "Kit", voice: "warm, concise, never pushy"
+
+      playbook do
+        product_brief "Acme helps teams publish changelogs."
+        goals "Get each account to publish their first changelog and upgrade."
+        engagement_signal(:has_paid_plan) { |s| %w[pro enterprise].include?(s[:plan]) }
+        engagement_signal(:user_count)    { |s| s.scope_for(:users).count }
+      end
+
+      capabilities do
+        register Concierge::Tools::RecallTool,                access: :read
+        register Concierge::Tools::RememberTool,              access: :write
+        register Concierge::Tools::ForgetTool,                access: :write
+        register Concierge::Tools::SetOutreachPreferenceTool, access: :write
+        register Concierge::Tools::RoutineTool,               access: :write
+      end
+
+      # Autonomous within caps — the standing guidance, unchanged.
+      authority { default :autonomous }
+    end
+
+    c.agent :billing do
+      persona name: "Bill", voice: "precise and factual, never chatty"
+
+      playbook do
+        product_brief "Acme bills monthly per seat. Invoices go out on the 1st."
+        goals "Keep every account's billing accurate and their invoices paid on time."
+        engagement_signal(:plan)       { |s| s[:plan] }
+        engagement_signal(:seat_count) { |s| s.scope_for(:users).count }
+      end
+
+      # Least privilege: billing reads and writes its own notes, and that is all.
+      # No outreach-preference tool, no routines — it has no business scheduling
+      # the customer's week.
+      capabilities do
+        register Concierge::Tools::RecallTool,   access: :read
+        register Concierge::Tools::RememberTool, access: :write
+      end
+
+      # Money always gates to a human, and billing proposes rather than acts.
+      authority do
+        default                :human_approval
+        action "money.refund", :human_execution
+      end
+
+      enabled true
+    end
   end
 end
 

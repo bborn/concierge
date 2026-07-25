@@ -51,6 +51,58 @@ module Concierge
         c.priority = ->(subject) { subject[:plan] == "enterprise" ? 100 : 1 }
       end
     end
+
+    # Phase 10 step-0 spike only. Deliberately NOT part of the baseline above:
+    # every existing test keeps running against the single-agent configuration,
+    # which is how we know the plural DSL is inert until a host opts in. Mirrors
+    # test/dummy/config/initializers/concierge.rb.
+    def self.configure_agents!
+      Concierge.configure do |c|
+        c.multi_agent_spike = true
+
+        c.agent :csm do
+          persona name: "Kit", voice: "warm, concise, never pushy"
+
+          playbook do
+            product_brief "Acme helps teams publish changelogs."
+            goals "Get each account to publish their first changelog and upgrade."
+            engagement_signal(:has_paid_plan) { |s| %w[pro enterprise].include?(s[:plan]) }
+            engagement_signal(:user_count)    { |s| s.scope_for(:users).count }
+          end
+
+          capabilities do
+            register Concierge::Tools::RecallTool,                access: :read
+            register Concierge::Tools::RememberTool,              access: :write
+            register Concierge::Tools::ForgetTool,                access: :write
+            register Concierge::Tools::SetOutreachPreferenceTool, access: :write
+            register Concierge::Tools::RoutineTool,               access: :write
+          end
+
+          authority { default :autonomous }
+        end
+
+        c.agent :billing do
+          persona name: "Bill", voice: "precise and factual, never chatty"
+
+          playbook do
+            product_brief "Acme bills monthly per seat. Invoices go out on the 1st."
+            goals "Keep every account's billing accurate and their invoices paid on time."
+            engagement_signal(:plan)       { |s| s[:plan] }
+            engagement_signal(:seat_count) { |s| s.scope_for(:users).count }
+          end
+
+          capabilities do
+            register Concierge::Tools::RecallTool,   access: :read
+            register Concierge::Tools::RememberTool, access: :write
+          end
+
+          authority do
+            default                :human_approval
+            action "money.refund", :human_execution
+          end
+        end
+      end
+    end
   end
 
   # A tiny in-memory sink standing in for a real Turbo broadcast, so tests can

@@ -11,7 +11,7 @@ module Concierge
       end
 
       def perform(body:, category: nil)
-        context_store.remember(subject, body: body, category: category, source: :agent)
+        context_store.remember(scope, body: body, category: category, source: :agent)
         { ok: true }
       end
     end
@@ -27,7 +27,7 @@ module Concierge
       end
 
       def perform(query: nil, category: nil)
-        context_store.recall(subject, query: query, category: category).map(&:body)
+        context_store.recall(scope, query: query, category: category).map(&:body)
       end
     end
 
@@ -41,7 +41,7 @@ module Concierge
       end
 
       def perform(id:)
-        row = context_store.forget(subject, id)
+        row = context_store.forget(scope, id)
         row ? { ok: true } : { error: "no note ##{id} for this account" }
       end
     end

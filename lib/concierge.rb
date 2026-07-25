@@ -27,6 +27,9 @@ require "concierge/change_detector"
 require "concierge/priority_service"
 require "concierge/budget"
 require "concierge/learning"
+# Throwaway (Agent × Subject) prototype — Phase 10 step 0. Inert unless a host
+# sets config.multi_agent_spike. Deleted by step 1.
+require "concierge/spike"
 require "concierge/engine"
 
 # Concierge — a per-account AI customer success manager for Rails, built on RubyLLM.
