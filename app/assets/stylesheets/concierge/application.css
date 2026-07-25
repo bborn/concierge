@@ -1,29 +1,258 @@
 /*
- * This is a manifest file that'll be compiled into application.css, which will include all the files
- * listed below.
+ * Concierge admin styles.
  *
- * Any CSS and SCSS file within this directory, lib/assets/stylesheets, vendor/assets/stylesheets,
- * or any plugin's vendor/assets/stylesheets directory can be referenced here using a relative path.
+ * Two deliberate constraints, both worth keeping:
  *
- * You're free to add application-wide styles to this file and they'll appear at the bottom of the
- * compiled file so the styles you add here take precedence over styles defined in any other CSS/SCSS
- * files in this directory. Styles in this file should be added after the last require_* statement.
- * It is generally better to create a new file per style scope.
+ * 1. Element selectors only. The admin views carry no CSS classes, so every
+ *    screen — including ones added later — gets styled without touching a
+ *    single .erb file.
+ * 2. No leakage. This sheet is linked *only* from the engine's own layout
+ *    (app/views/layouts/concierge/application.html.erb), so bare selectors
+ *    reach engine pages and nothing in the host app. Don't add it to a host
+ *    manifest.
  *
- *= require_tree .
- *= require_self
+ * Propshaft serves this verbatim: no sprockets directives, no build step, no
+ * framework, no web fonts.
  */
 
-/* A refusal from the rule gate (cap reached, unresolved conflict, missing
-   approver) has to read as something to act on, not as decoration. */
-.concierge-flash {
-  padding: 0.6rem 0.8rem;
-  border-left: 4px solid #2f6f3f;
-  background: #eef7f0;
+:root {
+  --c-fg: #1c1f23;
+  --c-muted: #6a7280;
+  --c-bg: #fff;
+  --c-panel: #f7f8fa;
+  --c-line: #dfe3e8;
+  --c-accent: #2f5fd0;
+  --c-quote: #e8cf8a;
+  --c-ok: #2f6f3f;
+  --c-ok-bg: #eef7f0;
+  --c-bad: #a12c2c;
+  --c-bad-bg: #fbeeee;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --c-fg: #e6e8eb;
+    --c-muted: #9aa3ad;
+    --c-bg: #16181c;
+    --c-panel: #1e2126;
+    --c-line: #2e333a;
+    --c-accent: #6f9bff;
+    --c-quote: #6b5a2c;
+    --c-ok: #4c9a63;
+    --c-ok-bg: #17251b;
+    --c-bad: #d9736f;
+    --c-bad-bg: #2a1a1a;
+  }
+}
+
+body {
+  margin: 0;
+  padding: 2rem 1.5rem 4rem;
+  background: var(--c-bg);
+  color: var(--c-fg);
+  font: 15px/1.55 ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto,
+        Helvetica, Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+body > * { max-width: 78rem; margin-inline: auto; }
+
+/* ---------- headings ---------- */
+
+h1, h2, h3 { line-height: 1.2; letter-spacing: -0.01em; }
+
+h1 { margin: 0 0 1.25rem; font-size: 1.6rem; font-weight: 650; }
+
+h2 {
+  margin: 2.5rem 0 0.75rem;
+  padding-bottom: 0.4rem;
+  border-bottom: 1px solid var(--c-line);
+  font-size: 1.15rem;
   font-weight: 600;
 }
 
+h3 { margin: 1.5rem 0 0.5rem; font-size: 1rem; font-weight: 600; }
+
+/* ---------- prose ---------- */
+
+p { max-width: 68ch; margin: 0 0 1rem; color: var(--c-muted); }
+p strong { color: var(--c-fg); }
+
+a { color: var(--c-accent); text-decoration-thickness: 1px; text-underline-offset: 2px; }
+a:hover { text-decoration: none; }
+
+code, kbd, pre {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.88em;
+}
+
+code, kbd { padding: 0.1em 0.35em; border-radius: 4px; background: var(--c-panel); }
+
+pre {
+  overflow-x: auto;
+  padding: 0.85rem 1rem;
+  border: 1px solid var(--c-line);
+  border-radius: 8px;
+  background: var(--c-panel);
+}
+
+blockquote {
+  margin: 0;
+  padding-left: 0.85rem;
+  border-left: 3px solid var(--c-quote);
+  color: var(--c-muted);
+  font-style: italic;
+}
+
+/* ---------- tables ---------- */
+
+table {
+  width: 100%;
+  margin: 0.5rem 0 1.5rem;
+  border-collapse: collapse;
+  font-size: 0.9rem;
+  font-variant-numeric: tabular-nums;
+}
+
+thead th {
+  padding: 0.5rem 0.7rem;
+  border-bottom: 1px solid var(--c-line);
+  background: var(--c-panel);
+  color: var(--c-muted);
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-align: left;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+}
+
+td { padding: 0.5rem 0.7rem; border-bottom: 1px solid var(--c-line); vertical-align: top; }
+
+/* Row-header cells (the label column on detail screens like /admin/agents).
+   Styled explicitly so they match the dt treatment instead of inheriting the
+   browser's centred bold default. */
+tbody th {
+  width: 1%;
+  padding: 0.5rem 0.7rem;
+  border-bottom: 1px solid var(--c-line);
+  color: var(--c-muted);
+  font-size: 0.8rem;
+  font-weight: 600;
+  text-align: right;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  vertical-align: top;
+  white-space: nowrap;
+}
+
+tbody tr:hover { background: var(--c-panel); }
+
+/* Leading cells are identifiers (agent, rule #) — they read better unwrapped. */
+td:first-child { white-space: nowrap; }
+
+/* ---------- definition lists (the proposal / detail cards) ---------- */
+
+dl {
+  display: grid;
+  grid-template-columns: minmax(6rem, 9rem) 1fr;
+  gap: 0.35rem 1rem;
+  margin: 0 0 1.25rem;
+  padding: 1rem 1.25rem;
+  border: 1px solid var(--c-line);
+  border-radius: 8px;
+  background: var(--c-panel);
+}
+
+dt {
+  padding-top: 0.15em;
+  color: var(--c-muted);
+  font-size: 0.8rem;
+  font-weight: 600;
+  text-align: right;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+dd { margin: 0; min-width: 0; overflow-wrap: break-word; }
+
+/* Controls belonging to a card span it and get a divider. */
+dl form { grid-column: 1 / -1; margin-top: 0.5rem; padding-top: 0.75rem; border-top: 1px solid var(--c-line); }
+
+/* ---------- forms ---------- */
+
+form { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; }
+
+/* Views put each row action in its own <form>. Inline them so a row stays one
+   line high instead of stacking a block per button. */
+td form { display: inline-flex; margin: 0; vertical-align: middle; }
+
+input[type="text"], input[type="email"], input[type="search"], select, textarea {
+  padding: 0.4rem 0.55rem;
+  border: 1px solid var(--c-line);
+  border-radius: 6px;
+  background: var(--c-bg);
+  color: inherit;
+  font: inherit;
+  font-size: 0.9rem;
+}
+
+textarea { width: 100%; min-height: 4rem; resize: vertical; }
+
+button, input[type="submit"] {
+  padding: 0.4rem 0.8rem;
+  border: 1px solid var(--c-line);
+  border-radius: 6px;
+  background: var(--c-bg);
+  color: var(--c-fg);
+  font: inherit;
+  font-size: 0.875rem;
+  font-weight: 550;
+  cursor: pointer;
+}
+
+button:hover, input[type="submit"]:hover { background: var(--c-panel); border-color: var(--c-muted); }
+
+/* Every button stays neutral on purpose. Each row action lives in its own
+   <form>, so any "first button is the primary one" rule would paint destructive
+   actions (Retire, Reject) the same as affirmative ones. With no classes to key
+   off, uniform-and-honest beats guessing wrong. */
+
+label { color: var(--c-muted); font-size: 0.85rem; }
+
+input:focus-visible, select:focus-visible, textarea:focus-visible, button:focus-visible {
+  outline: 2px solid var(--c-accent);
+  outline-offset: 1px;
+}
+
+/* ---------- small screens ---------- */
+
+@media (max-width: 40rem) {
+  body { padding: 1.25rem 1rem 3rem; }
+  table { font-size: 0.82rem; }
+  dl { grid-template-columns: 1fr; gap: 0.15rem; }
+  dt { text-align: left; }
+  dd { margin-bottom: 0.5rem; }
+}
+
+/* ---------- flash ---------- */
+
+/* A refusal from the rule gate (cap reached, unresolved conflict, missing
+   approver) has to read as something to act on, not as decoration.
+   Added by step 2; rewritten onto the shared variables here so it follows dark
+   mode rather than staying hardcoded light. */
+.concierge-flash {
+  padding: 0.6rem 0.9rem;
+  margin: 0 0 1.25rem;
+  border-left: 4px solid var(--c-ok);
+  border-radius: 0 6px 6px 0;
+  background: var(--c-ok-bg);
+  color: var(--c-fg);
+  font-weight: 600;
+  max-width: none;
+}
+
 .concierge-flash--alert {
-  border-left-color: #a12c2c;
-  background: #fbeeee;
+  border-left-color: var(--c-bad);
+  background: var(--c-bad-bg);
 }
