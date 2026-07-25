@@ -5,7 +5,7 @@ module Concierge
   # ("once a week send me this report"). A single static sweep enqueues due rows
   # — no per-account cron (design §3.6, research constraint #6).
   class Routine < ApplicationRecord
-    include SubjectScoped
+    include AgentScoped
 
     AUTHORS = %w[agent customer].freeze
 

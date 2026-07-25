@@ -60,7 +60,7 @@ module Concierge
       @store.remember(@subject, body: "account-wide fact", tier: :account)
       @store.remember(user_subject, body: "user-private fact", tier: :subject)
 
-      bodies = @store.top_of_mind(user_subject, account_subject: @subject).map(&:body)
+      bodies = @store.top_of_mind(user_subject, account_scope: @subject).map(&:body)
       assert_includes bodies, "account-wide fact"
       assert_includes bodies, "user-private fact"
     end

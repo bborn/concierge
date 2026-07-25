@@ -1,9 +1,10 @@
 <h1>Routines</h1>
 <table>
-  <thead><tr><th>Account</th><th>Schedule</th><th>Instruction</th><th>Author</th><th>Next run</th><th>Enabled</th></tr></thead>
+  <thead><tr><th>Agent</th><th>Account</th><th>Schedule</th><th>Instruction</th><th>Author</th><th>Next run</th><th>Enabled</th></tr></thead>
   <tbody>
     <% @routines.each do |r| %>
       <tr>
+        <td><%= r.agent_slug %></td>
         <td><%= r.subject_type %>#<%= r.subject_id %></td>
         <td><%= r.schedule %></td>
         <td><%= r.instruction %></td>

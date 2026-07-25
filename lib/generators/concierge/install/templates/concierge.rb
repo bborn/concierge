@@ -46,4 +46,20 @@ Concierge.configure do |config|
 
   # 7. Guard the admin surface. Return truthy to allow.
   # config.authenticate_admin = ->(controller) { controller.current_user&.admin? }
+
+  # 8. More than one business function? Everything above is the implicit :csm
+  # agent. Declare agents explicitly to run several over the same accounts, each
+  # with its own persona, charter, tools, authority envelope, memory namespace
+  # (the slug) and kill switch. State is keyed by (agent, account), so no agent
+  # reads another's notes.
+  #
+  # config.agent :disputes do
+  #   persona name: "Dee", voice: "precise and factual"
+  #   playbook { product_brief "..." }
+  #   capabilities { register Concierge::Tools::RecallTool, access: :read }
+  #   authority do
+  #     default                :human_approval   # propose; a human approves
+  #     action "money.refund", :human_execution  # money always gates to a human
+  #   end
+  # end
 end

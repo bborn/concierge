@@ -22,4 +22,35 @@ class ChatWidgetTest < ActionDispatch::IntegrationTest
 
     assert_response :service_unavailable
   end
+
+  test "an omitted agent parameter answers as the default agent" do
+    Concierge::Test.configure_agents!
+    Concierge::Test::FakeChat.script(reply: "Kit here.")
+
+    post "/concierge/accounts/#{@tenant.id}/chat", params: { message: "hi" }
+
+    assert_response :success
+    assert_equal "csm", response.parsed_body["agent"]
+  end
+
+  test "the agent parameter picks which business function answers" do
+    Concierge::Test.configure_agents!
+    Concierge::Test::FakeChat.script(reply: "Bill here.")
+
+    post "/concierge/accounts/#{@tenant.id}/chat", params: { message: "hi", agent: "billing" }
+
+    assert_response :success
+    assert_equal "billing", response.parsed_body["agent"]
+    assert_includes Concierge::Test::FakeChat.current.system_prompt, "Bill"
+  end
+
+  test "an agent no host declared is a 404, not a silent fall-back to the CSM" do
+    Concierge::Test.configure_agents!
+    Concierge::Test::FakeChat.script(reply: "should never run")
+
+    post "/concierge/accounts/#{@tenant.id}/chat", params: { message: "hi", agent: "nope" }
+
+    assert_response :not_found
+    assert_equal 0, Concierge::Conversation.count
+  end
 end
