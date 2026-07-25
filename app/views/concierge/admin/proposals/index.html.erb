@@ -79,6 +79,25 @@
         <dd><strong><%= proposal.execution_error %></strong></dd>
       <% end %>
 
+      <% if Concierge.config.slack.channel(proposal.agent_slug) %>
+        <% card = @slack_cards[proposal.id] %>
+        <dt>Slack</dt>
+        <dd>
+          <% if card.nil? %>
+            no card was posted — decide it here
+          <% elsif card.suppressed? %>
+            <strong>not posted</strong>:
+            <%= proposal.agent_slug %> was over its daily card cap.
+            Deciding it here is the same decision.
+          <% elsif card.failed? %>
+            <strong>could not be posted</strong>: <%= card.error %>
+          <% else %>
+            carded in <code><%= card.channel_id %></code> — a click there takes this
+            same path
+          <% end %>
+        </dd>
+      <% end %>
+
       <%= form_with url: admin_proposal_path(proposal), method: :patch do |f| %>
         <%= f.hidden_field :transition, value: "approve" %>
         <%# When the host wired admin_actor the approver is the signed-in human;

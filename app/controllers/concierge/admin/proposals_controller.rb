@@ -20,6 +20,14 @@ module Concierge
 
         @decided = Concierge::AgentProposal.where(state: %w[executed rejected expired])
                                            .recent.limit(50)
+
+        # Where each of these is (or is not) also a Slack card (§10.7). A card that
+        # was suppressed by the daily cap or failed to post leaves the proposal
+        # exactly here and nowhere else — so this screen has to say so, or an
+        # operator watching a channel would never learn the decision was waiting.
+        @slack_cards = Concierge::SlackCard
+                       .where(agent_proposal_id: @awaiting.map(&:id) + @unexecuted.map(&:id))
+                       .index_by(&:agent_proposal_id)
       end
 
       def update

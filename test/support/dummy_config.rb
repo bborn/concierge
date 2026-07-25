@@ -105,6 +105,39 @@ module Concierge
     end
   end
 
+  module Test
+    # The Slack half of the host's config (design §10.7). Separate from
+    # +configure_agents!+ on purpose: an un-Slacked host is the default, and every
+    # test that does not call this proves the approval queue works without a chat
+    # transport at all — which is the property that makes an outage cost
+    # convenience and not authority.
+    #
+    # Returns the recording transport so the test can assert on what Slack was
+    # asked to do.
+    def self.configure_slack!(cap: nil, actor_for: nil, channels: { csm: "C0CSM", billing: "C0BILLING" })
+      transport = SlackTransport.new
+
+      # Declaring a block twice re-opens it everywhere in this DSL, so a test that
+      # reconfigures Slack starts from a fresh Settings rather than inheriting the
+      # channels of the call before it.
+      Concierge.config.remove_instance_variable(:@slack) if Concierge.config.instance_variable_defined?(:@slack)
+
+      Concierge.configure do |c|
+        c.slack do
+          signing_secret SlackRequests::SECRET
+          transport transport.to_proc
+          daily_card_cap cap if cap
+          actor_for actor_for if actor_for
+          channels.each { |slug, id| channel slug, id }
+        end
+
+        c.proposal_notifier = Concierge::Slack::Notifier
+      end
+
+      transport
+    end
+  end
+
   # A tiny in-memory sink standing in for a real Turbo broadcast, so tests can
   # assert the in-app channel actively surfaced a message.
   class InAppInbox

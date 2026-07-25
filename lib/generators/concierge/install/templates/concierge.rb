@@ -94,10 +94,36 @@ Concierge.configure do |config|
   # end
   #
   # config.proposal_ttl      = 14.days                        # nil (default) = never expire
-  # config.proposal_notifier = ->(proposal) { Slack.post_card(proposal) }
+  # config.proposal_notifier = ->(proposal) { YourMailer.approval(proposal).deliver_later }
   #
   # Expiry rides on the sweep you already registered above. Money should stay at
   # :human_execution: the engine records the decision and never performs it.
+
+  # 9b. Slack as the remote control for that queue. A real Slack app, not an
+  # incoming webhook — a webhook cannot tell you WHO clicked, and an approval with
+  # an unknown approver is not maker-checked. Point the app's Interactivity URL at
+  # POST /concierge/slack/interactions and its Events URL at
+  # POST /concierge/slack/events; both verify Slack's signature over the raw body
+  # and 404 without a signing secret.
+  #
+  # config.slack do
+  #   signing_secret ENV["SLACK_SIGNING_SECRET"]
+  #   bot_token      ENV["SLACK_BOT_TOKEN"]
+  #
+  #   channel :csm,      "C0CSM"        # one channel per agent, one thread per case
+  #   channel :disputes, "C0DISPUTES"
+  #
+  #   daily_card_cap 20                 # anti-noise: over it, the card is not posted
+  #   actor_for ->(user) { User.find_by(slack_id: user["id"])&.email }
+  # end
+  #
+  # config.proposal_notifier = Concierge::Slack::Notifier
+  #
+  # A click writes the decision to the proposal row FIRST, then executes, then
+  # updates the card — the card is last and may fail, because Postgres is the
+  # record and /concierge/admin/proposals is the same queue. Autonomous work is
+  # never carded; schedule Concierge::SlackDigestJob and each agent summarises its
+  # own unilateral sends in one message.
 
   # 10. More than one business function? Everything above is the implicit :csm
   # agent. Declare agents explicitly to run several over the same accounts, each

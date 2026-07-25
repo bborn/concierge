@@ -1,0 +1,126 @@
+<h1>Slack approval intake</h1>
+
+<p>
+  Slack is the <strong>remote control</strong>; Postgres is the <strong>record</strong>.
+  A proposal's card carries Approve, Reject and Correct buttons, and a click travels
+  the same path as the form on
+  <%= link_to "the proposals queue", admin_proposals_path %>: signed payload &rarr;
+  write the decision to the proposal row &rarr; execute &rarr; update the card. The
+  card is updated <em>last</em> and is allowed to fail, because a stale card with a
+  correct row is recoverable and the reverse is not. If Slack is down, every
+  decision is still available here — an outage costs convenience, not authority.
+</p>
+
+<% unless @settings.configured? %>
+  <p class="concierge-flash concierge-flash--alert">
+    No Slack signing secret is configured, so <code>/concierge/slack/events</code> and
+    <code>/concierge/slack/interactions</code> answer 404. Nothing can be signed, so
+    nothing is trusted.
+  </p>
+<% end %>
+
+<h2>Endpoints</h2>
+
+<dl>
+  <dt>Events</dt>
+  <dd><code>POST <%= slack_events_path %></code> — Slack's URL handshake, and replies humans type in a case thread (each becomes a captured correction).</dd>
+
+  <dt>Interactivity</dt>
+  <dd><code>POST <%= slack_interactions_path %></code> — the buttons and the two modals. This is why the seam needs a real Slack app rather than an incoming webhook: a webhook cannot tell you who clicked.</dd>
+
+  <dt>Signature</dt>
+  <dd>
+    <%= @settings.configured? ? "verified on every request (v0 HMAC-SHA256, 5-minute replay window)" : "not configured" %>
+  </dd>
+
+  <dt>Posting</dt>
+  <dd><%= @settings.can_post? ? "a bot token or transport is configured" : "no bot token — cards cannot be posted, decisions can still be received" %></dd>
+
+  <dt>Who clicked</dt>
+  <dd>
+    <%= @settings.actor_for ? "mapped to a host identity by config.slack { actor_for … }" : "recorded as the Slack user id (slack:U…) — map it with config.slack { actor_for … }" %>
+  </dd>
+</dl>
+
+<h2>One channel per agent</h2>
+
+<table>
+  <thead>
+    <tr>
+      <th>Agent</th><th>Channel</th><th>Cards today</th><th>Daily cap</th>
+      <th>Suppressed</th><th>Failed</th><th>Awaiting a human</th>
+    </tr>
+  </thead>
+  <tbody>
+    <% @agents.each do |agent| %>
+      <% slug = agent.slug.to_s %>
+      <tr>
+        <th><%= slug %><%= " — off" unless agent.enabled? %></th>
+        <td>
+          <% if @settings.channel(slug) %>
+            <code><%= @settings.channel(slug) %></code>
+          <% else %>
+            <em>none — this agent posts no cards</em>
+          <% end %>
+        </td>
+        <td><%= @posted_today[slug] || 0 %></td>
+        <td><%= @settings.daily_card_cap || "unlimited" %></td>
+        <td><%= @suppressed[slug] || 0 %></td>
+        <td><%= @failed[slug] || 0 %></td>
+        <td><%= @awaiting[slug] || 0 %></td>
+      </tr>
+    <% end %>
+  </tbody>
+</table>
+
+<p>
+  The cap is per agent per day: one business function cannot make a channel
+  unreadable. Over it, the card is not posted and the suppression is recorded — the
+  proposal is untouched and still waiting in the queue. Autonomous work never gets a
+  card at all; it arrives as a periodic digest (<code>Concierge::SlackDigestJob</code>),
+  because a notification nobody can act on is how the refund card gets scrolled past.
+</p>
+
+<h2>Recent cards</h2>
+
+<% if @cards.none? %>
+  <p><em>No cards yet.</em></p>
+<% else %>
+  <table>
+    <thead>
+      <tr>
+        <th>Card</th><th>Agent</th><th>Case</th><th>Proposal</th>
+        <th>State</th><th>Thread</th><th>Posted</th>
+      </tr>
+    </thead>
+    <tbody>
+      <% @cards.each do |card| %>
+        <tr>
+          <td>#<%= card.id %></td>
+          <td><%= card.agent_slug %></td>
+          <td><%= card.subject_type %>#<%= card.subject_id %></td>
+          <td>
+            <%= link_to "##{card.agent_proposal_id}", admin_proposals_path %>
+          </td>
+          <td>
+            <%= card.state %>
+            <% if card.failed? %>
+              <br><strong><%= card.error %></strong>
+            <% elsif card.suppressed? %>
+              <br>over the daily cap — decide it in the queue
+            <% end %>
+          </td>
+          <td>
+            <% if card.thread_ts.present? %>
+              <code><%= card.thread_ts %></code>
+              <%= "(root)" if card.thread_ts == card.message_ts %>
+            <% else %>
+              —
+            <% end %>
+          </td>
+          <td><%= card.posted_at || "—" %></td>
+        </tr>
+      <% end %>
+    </tbody>
+  </table>
+<% end %>

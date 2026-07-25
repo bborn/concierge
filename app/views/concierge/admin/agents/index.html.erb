@@ -67,6 +67,18 @@
         </td>
       </tr>
       <tr>
+        <th>Slack</th>
+        <td>
+          <% if (channel = Concierge.config.slack.channel(agent.memory_namespace)) %>
+            cards post to <code><%= channel %></code> &middot;
+            <%= link_to "intake", admin_slack_path %>
+          <% else %>
+            <%= link_to "no channel", admin_slack_path %> — this agent's proposals
+            wait in the queue only
+          <% end %>
+        </td>
+      </tr>
+      <tr>
         <th>Memory namespace</th>
         <td><code><%= agent.memory_namespace %></code></td>
       </tr>

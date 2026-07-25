@@ -32,6 +32,28 @@ module Concierge
       new(Concierge.config.agent, target)
     end
 
+    # Rebuild the Scope a persisted row was written under. A row travels as a
+    # slug and an id because it has to outlive the process that wrote it, and
+    # anything reading one back — a Slack card, a proposal, an inbound webhook —
+    # needs the pair again before it may touch another table.
+    #
+    # Returns nil when either dimension no longer resolves: an agent removed from
+    # the config, or a deleted account. That is inert data, not an error (step-0
+    # spike §A1), and callers treat it as a refusal rather than crashing.
+    def self.resolve(agent_slug:, subject_id:)
+      agent = Concierge.config.agent(agent_slug)
+      return unless agent
+
+      subject = Concierge.config.account&.find_subject(subject_id)
+      return unless subject
+
+      new(agent, subject)
+    rescue StandardError => e
+      Concierge.logger&.warn("[concierge] could not resolve scope " \
+                             "#{agent_slug}/#{subject_id}: #{e.class}: #{e.message}")
+      nil
+    end
+
     # The subject half of a key, from either a Scope or a bare Subject. Tables
     # that deliberately have no agent dimension — +concierge_outreach_preferences+
     # is the customer's preference about being contacted at all, not one agent's

@@ -1,0 +1,248 @@
+{
+  "awaiting (money.refund, human_execution gate)": [
+    {
+      "type": "header",
+      "text": {
+        "type": "plain_text",
+        "text": "Approval needed: money.refund"
+      }
+    },
+    {
+      "type": "section",
+      "text": {
+        "type": "mrkdwn",
+        "text": "*billing* on *account #4*\n• *order_id*: 4471\n• *amount_cents*: 12900\n• *reason*: disputed invoice, resolved in their favour"
+      }
+    },
+    {
+      "type": "section",
+      "fields": [
+        {
+          "type": "mrkdwn",
+          "text": "*Gate*\nhuman execution — approve it, then do it yourself"
+        },
+        {
+          "type": "mrkdwn",
+          "text": "*Proposed by*\nagent:billing"
+        },
+        {
+          "type": "mrkdwn",
+          "text": "*Proposed at*\n2026-07-25 15:16:05 UTC"
+        },
+        {
+          "type": "mrkdwn",
+          "text": "*Expires*\n2026-08-08 15:16:05 UTC"
+        }
+      ]
+    },
+    {
+      "type": "actions",
+      "block_id": "concierge_proposal_actions",
+      "elements": [
+        {
+          "type": "button",
+          "action_id": "concierge_approve",
+          "text": {
+            "type": "plain_text",
+            "text": "Approve"
+          },
+          "value": "7",
+          "style": "primary"
+        },
+        {
+          "type": "button",
+          "action_id": "concierge_correct",
+          "text": {
+            "type": "plain_text",
+            "text": "Correct…"
+          },
+          "value": "7"
+        },
+        {
+          "type": "button",
+          "action_id": "concierge_reject",
+          "text": {
+            "type": "plain_text",
+            "text": "Reject"
+          },
+          "value": "7",
+          "style": "danger"
+        }
+      ]
+    },
+    {
+      "type": "context",
+      "elements": [
+        {
+          "type": "mrkdwn",
+          "text": "Slack is the remote control; the record is `/concierge/admin/proposals` — proposal #7."
+        }
+      ]
+    }
+  ],
+  "decided (record.plan_change, approved in Slack by dana@acme.test)": [
+    {
+      "type": "header",
+      "text": {
+        "type": "plain_text",
+        "text": "Proposal executed: record.plan_change"
+      }
+    },
+    {
+      "type": "section",
+      "text": {
+        "type": "mrkdwn",
+        "text": "*billing* on *account #4*\n• *from*: pro\n• *to*: enterprise\n• *reason*: seat count passed the enterprise floor"
+      }
+    },
+    {
+      "type": "section",
+      "text": {
+        "type": "mrkdwn",
+        "text": ":white_check_mark: *Executed* at 2026-07-25 15:16:55 UTC by dana@acme.test\nApproved by dana@acme.test"
+      }
+    },
+    {
+      "type": "context",
+      "elements": [
+        {
+          "type": "mrkdwn",
+          "text": "Slack is the remote control; the record is `/concierge/admin/proposals` — proposal #6."
+        }
+      ]
+    }
+  ],
+  "reject modal": {
+    "type": "modal",
+    "callback_id": "concierge_reject_modal",
+    "private_metadata": "{\"proposal_id\":7,\"channel\":\"C0BILLINGDEMO\",\"ts\":\"1784992565.998262\"}",
+    "title": {
+      "type": "plain_text",
+      "text": "Reject proposal"
+    },
+    "submit": {
+      "type": "plain_text",
+      "text": "Reject"
+    },
+    "close": {
+      "type": "plain_text",
+      "text": "Cancel"
+    },
+    "blocks": [
+      {
+        "type": "context",
+        "elements": [
+          {
+            "type": "mrkdwn",
+            "text": "*money.refund* · proposal #7 · billing"
+          }
+        ]
+      },
+      {
+        "type": "input",
+        "block_id": "concierge_reason",
+        "label": {
+          "type": "plain_text",
+          "text": "Why not?"
+        },
+        "hint": {
+          "type": "plain_text",
+          "text": "Required. A decision nobody can read the reasoning of is not an audit trail."
+        },
+        "element": {
+          "type": "plain_text_input",
+          "action_id": "value",
+          "multiline": true
+        }
+      }
+    ]
+  },
+  "correct modal": {
+    "type": "modal",
+    "callback_id": "concierge_correct_modal",
+    "private_metadata": "{\"proposal_id\":5}",
+    "title": {
+      "type": "plain_text",
+      "text": "Correct and approve"
+    },
+    "submit": {
+      "type": "plain_text",
+      "text": "Approve"
+    },
+    "close": {
+      "type": "plain_text",
+      "text": "Cancel"
+    },
+    "blocks": [
+      {
+        "type": "context",
+        "elements": [
+          {
+            "type": "mrkdwn",
+            "text": "*message.outreach* · proposal #5 · billing"
+          }
+        ]
+      },
+      {
+        "type": "input",
+        "block_id": "concierge_payload:body",
+        "label": {
+          "type": "plain_text",
+          "text": "body"
+        },
+        "element": {
+          "type": "plain_text_input",
+          "action_id": "value",
+          "multiline": true,
+          "initial_value": "Heads up: the card on file expires before the next invoice date. Want me to send Hank a link to update it?"
+        }
+      },
+      {
+        "type": "input",
+        "block_id": "concierge_payload:kind",
+        "label": {
+          "type": "plain_text",
+          "text": "kind"
+        },
+        "element": {
+          "type": "plain_text_input",
+          "action_id": "value",
+          "multiline": false,
+          "initial_value": "outreach"
+        }
+      },
+      {
+        "type": "input",
+        "block_id": "concierge_payload:channel",
+        "label": {
+          "type": "plain_text",
+          "text": "channel"
+        },
+        "element": {
+          "type": "plain_text_input",
+          "action_id": "value",
+          "multiline": false,
+          "initial_value": "email"
+        }
+      },
+      {
+        "type": "input",
+        "block_id": "concierge_rule",
+        "optional": true,
+        "label": {
+          "type": "plain_text",
+          "text": "What should the agent do differently next time?"
+        },
+        "hint": {
+          "type": "plain_text",
+          "text": "Optional. Becomes a proposed rule for a human to approve — never an active one."
+        },
+        "element": {
+          "type": "plain_text_input",
+          "action_id": "value",
+          "multiline": true
+        }
+      }
+    ]
+  }
+}

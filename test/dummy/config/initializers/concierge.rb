@@ -69,10 +69,43 @@ Rails.application.config.to_prepare do
     # current state rather than executed late.
     c.proposal_ttl = 14.days
 
-    c.proposal_notifier = lambda do |proposal|
-      Rails.logger.info("[dummy] proposal ##{proposal.id} (#{proposal.action_class}) " \
-                        "awaiting a human for #{proposal.agent_slug}")
+    # --- Slack as the remote control (design §10.7) ----------------------------
+    # One channel per agent; proposals arrive there as Block Kit cards with
+    # Approve / Reject / Correct. A click comes back through
+    # POST /concierge/slack/interactions, is signature-verified, and takes the
+    # *same* path as the admin form: ApprovalIntake -> the proposal row -> execute.
+    #
+    # Offline by default. Without SLACK_BOT_TOKEN the Web API calls are answered by
+    # a local stand-in that logs them, so `bin/rails db:seed` produces real
+    # SlackCard rows (visible on /concierge/admin/slack) with no network and no
+    # workspace. Set SLACK_BOT_TOKEN + SLACK_SIGNING_SECRET to point it at a real
+    # Slack app.
+    c.slack do
+      signing_secret ENV.fetch("SLACK_SIGNING_SECRET", "dummy-signing-secret")
+      bot_token      ENV["SLACK_BOT_TOKEN"]
+
+      channel :csm,     ENV.fetch("SLACK_CSM_CHANNEL", "C0CSMDEMO")
+      channel :billing, ENV.fetch("SLACK_BILLING_CHANNEL", "C0BILLINGDEMO")
+
+      # Deliberately tiny so the anti-noise cap is visible by hand: the dummy seeds
+      # four billing proposals, so the last two are never carded — and both are
+      # still decidable on /concierge/admin/proposals, which is the point.
+      daily_card_cap 2
+
+      # Who clicked. A real host looks the Slack user up in its own tables; without
+      # this the Slack user id itself is the actor on the audit trail.
+      actor_for ->(user) { User.find_by(email: "dana@acme.test")&.email if user["id"] == "UDANA" }
+
+      unless ENV["SLACK_BOT_TOKEN"]
+        transport lambda { |method, payload|
+          Rails.logger.info("[dummy] slack #{method} -> #{payload[:channel] || payload[:trigger_id]}")
+          { "ok" => true, "channel" => payload[:channel],
+            "ts" => format("%.6f", Time.current.to_f) }
+        }
+      end
     end
+
+    c.proposal_notifier = Concierge::Slack::Notifier
 
     c.proposals do
       # A record mutation the engine performs *after* a human approves it. It gets
