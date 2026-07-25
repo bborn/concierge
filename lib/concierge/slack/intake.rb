@@ -244,7 +244,7 @@ module Concierge
       # watching. Falls back to a logged warning when there is nowhere to put it —
       # a modal submission has no channel.
       def refuse(message)
-        channel = container["channel_id"] || (payload.dig("channel", "id") if payload["channel"])
+        channel = container["channel_id"] || payload.dig("channel", "id")
         user    = payload.dig("user", "id")
 
         if channel.present? && user.present?

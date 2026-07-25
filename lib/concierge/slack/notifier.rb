@@ -41,7 +41,7 @@ module Concierge
         channel = Concierge::Slack.channel_for(scope.agent_slug)
         return log("#{scope.agent_slug} has no Slack channel configured") unless channel
 
-        return suppress(channel) if at_daily_cap?(scope)
+        return suppress(scope) if at_daily_cap?(scope)
 
         post(scope, channel)
       rescue StandardError => e
@@ -89,9 +89,7 @@ module Concierge
       # Over the cap. Recorded rather than dropped: "we deliberately did not tell
       # you about this one" is information an operator is owed, and the digest
       # reads these rows.
-      def suppress(_channel)
-        scope = Concierge::Scope.resolve(agent_slug: proposal.agent_slug,
-                                         subject_id: proposal.subject_id)
+      def suppress(scope)
         Concierge.logger&.info(
           "[concierge] #{proposal.agent_slug} is at its daily Slack card cap; " \
           "proposal #{proposal.id} was not posted (it is still in the approval queue)"
