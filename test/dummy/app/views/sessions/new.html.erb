@@ -1,0 +1,36 @@
+<% content_for :title, "Sign in · Acme" %>
+
+<div class="signin">
+  <div class="signin__brand">
+    <span class="brand__mark">A</span>
+    <strong>Acme</strong>
+  </div>
+
+  <h1>Who are you today?</h1>
+  <p class="lede">
+    No passwords — this is a demo. Pick a seat and the product, and the agent working
+    that account, come with it.
+  </p>
+
+  <div class="card card--flush" style="margin-top: 18px">
+    <ul class="picker">
+      <% @users.each do |user| %>
+        <li>
+          <%= form_with url: signin_path, method: :post do %>
+            <%= hidden_field_tag :user_id, user.id %>
+            <button type="submit">
+              <span class="avatar"><%= user.display_name.first %></span>
+              <span class="picker__who"><%= user.display_name %></span>
+              <span class="picker__where"><%= user.tenant.name %> · <%= user.tenant.plan %></span>
+            </button>
+          <% end %>
+        </li>
+      <% end %>
+    </ul>
+  </div>
+
+  <p class="faint" style="margin-top: 16px">
+    The operator's view of the same accounts lives at
+    <%= link_to "/concierge/admin/proposals", concierge.admin_proposals_path %>.
+  </p>
+</div>

@@ -1,25 +1,61 @@
-# Sample data for exercising the engine by hand: three accounts at different
-# points in their lifecycle, each with memory, routines, and a delivery history.
+# Sample data for exercising the app by hand: three accounts at different points
+# in their lifecycle, each with memory, routines, and a delivery history — and a
+# real product surface to look at them through.
 #
 #   bin/rails db:seed && bin/rails server
-#   open http://localhost:3000/concierge/admin/memories
+#   open http://localhost:3000              # sign in as Dana at Acme Corp
+#   open http://localhost:3000/concierge/admin/proposals   # the operator's side
+#
+# The state this leaves behind is chosen so the demo is interesting on the first
+# click: Acme is mid-onboarding with a draft and nothing published, Globex is
+# further along, there is unread outreach waiting in Dana's inbox, and the
+# approval queue already has proposals in it.
 
 require "securerandom"
 
 [ Concierge::SlackCard, Concierge::Memory, Concierge::Routine, Concierge::ChannelDelivery,
   Concierge::Handoff, Concierge::OutreachPreference, Concierge::Conversation,
   Concierge::AgentProposal, Concierge::BudgetLedger, Concierge::AgentRuleRevision,
-  Concierge::AgentRule, Concierge::AgentRun, User, Tenant ].each(&:delete_all)
+  Concierge::AgentRule, Concierge::AgentRun,
+  InboxMessage, ChangelogEntry, User, Tenant ].each(&:delete_all)
 
 acme = Tenant.create!(name: "Acme Corp", plan: "pro", last_active_at: 2.days.ago)
-acme.users.create!(email: "dana@acme.test")
+dana = acme.users.create!(email: "dana@acme.test")
 
 globex = Tenant.create!(name: "Globex", plan: "enterprise", last_active_at: 6.hours.ago)
-globex.users.create!(email: "hank@globex.test")
+hank = globex.users.create!(email: "hank@globex.test")
 globex.users.create!(email: "lena@globex.test")
 
 initech = Tenant.create!(name: "Initech", plan: "free", last_active_at: 41.days.ago)
 initech.users.create!(email: "peter@initech.test")
+
+# --- The product itself -------------------------------------------------------
+# Acme Corp is the account the CSM's charter is about: paying, active, and has
+# never published a thing. Globex is what "further along" looks like.
+
+ChangelogEntry.create!(
+  tenant: acme, author: dana, status: "draft",
+  title: "Scheduled exports",
+  body: "You can now schedule a CSV export nightly instead of clicking it every morning.\n" \
+        "TODO: screenshot, and check with support before this goes out."
+)
+
+[
+  [ "Teams", "Invite your whole team and give each of them their own API key.", 21 ],
+  [ "Webhooks v2", "Retries with exponential backoff, and a delivery log you can actually read.", 9 ],
+  [ "Faster search", "Search across every changelog you've published, in under 100ms.", 2 ]
+].each do |title, body, days|
+  ChangelogEntry.create!(
+    tenant: globex, author: hank, status: "published",
+    title: title, body: body, published_at: days.days.ago
+  )
+end
+
+ChangelogEntry.create!(
+  tenant: globex, author: hank, status: "draft",
+  title: "SSO for enterprise plans",
+  body: "SAML, SCIM provisioning, and per-team roles."
+)
 
 def subject_for(tenant) = Concierge.config.account.find_subject(tenant.id)
 
@@ -84,14 +120,18 @@ Concierge::Routine.create!(
 )
 
 # --- Delivery audit trail ----------------------------------------------------
+# Email sends leave their copy in the recipient's mailbox, so an audit row is all
+# the engine keeps. These are backdated past Acme's weekly frequency cap on
+# purpose: "Kit, take a look" in the running app should be allowed to send on the
+# first click, and suppressed on the second — which is the cap doing its job in
+# front of you rather than in a test.
 
 [
-  [ :csm,     acme,    "email",  "outreach", 3.days.ago ],
-  [ :csm,     acme,    "in_app", "reply",    2.days.ago ],
-  [ :billing, acme,    "email",  "outreach", 5.days.ago ],
-  [ :csm,     globex,  "email",  "outreach", 8.days.ago ],
-  [ :csm,     globex,  "email",  "routine",  1.day.ago ],
-  [ :csm,     initech, "email",  "outreach", 30.days.ago ]
+  [ :csm,     acme,    "email", "outreach",  9.days.ago ],
+  [ :billing, acme,    "email", "outreach", 11.days.ago ],
+  [ :csm,     globex,  "email", "outreach",  8.days.ago ],
+  [ :csm,     globex,  "email", "routine",   1.day.ago ],
+  [ :csm,     initech, "email", "outreach", 30.days.ago ]
 ].each do |slug, tenant, channel, kind, sent_at|
   Concierge::ChannelDelivery.create!(
     **scope_for(slug, tenant).key,
@@ -99,6 +139,44 @@ Concierge::Routine.create!(
     unsubscribe_token: SecureRandom.hex(16)
   )
 end
+
+# --- In-app messages the customer can actually read --------------------------
+# Driven through the real Outreach.dispatch path rather than written by hand, so
+# the host's in_app_broadcaster runs and the InboxMessage that holds the words is
+# created under the same unsubscribe token the ChannelDelivery is recorded under.
+# Backdated through Governance so the seeded history is history.
+
+def deliver_in_app(scope, body, sent_at:, kind: "outreach")
+  Concierge::Outreach.dispatch(
+    scope, { body: body, kind: kind }, channel: :in_app, kind: kind,
+    governance: Concierge::Governance.new(now: sent_at)
+  )
+end
+
+deliver_in_app(
+  scope_for(:csm, acme),
+  "You've been on Pro for a few weeks and haven't published a changelog entry yet — " \
+  "and you've got one sitting in drafts. Want me to help you get \"Scheduled exports\" " \
+  "out the door before your Q3 launch?",
+  sent_at: 9.days.ago
+)
+
+deliver_in_app(
+  scope_for(:billing, acme),
+  "Heads up from billing: the card on file expires in March and there's no backup " \
+  "payment method on the account.",
+  sent_at: 12.days.ago
+)
+
+deliver_in_app(
+  scope_for(:csm, globex),
+  "Three entries published this quarter — \"Faster search\" is your best-read one yet. " \
+  "Want the Friday summary to include per-team view counts?",
+  sent_at: 2.days.ago
+)
+
+# One already read, so the inbox is not uniformly bold.
+InboxMessage.find_by(tenant_id: globex.id)&.mark_read!
 
 # --- Governance state: Acme asked for less email; Initech opted out -----------
 
@@ -130,13 +208,18 @@ Concierge::Outreach.deliver(
 )
 
 # 2. A record mutation the engine performs itself once a human approves it, with
-#    the precondition the host declared for it (see the initializer): approve it
-#    and Acme's plan really changes; change Acme's plan first and the approval
-#    refuses, because it was a decision about a different world.
+#    the precondition the host declared for it (see Dummy::ConciergeSetup):
+#    approve it and Globex's plan really changes; change Globex's plan first and
+#    the approval refuses, because it was a decision about a different world.
+#
+#    It is Globex's rather than Acme's so that Acme — the account you sign in as —
+#    starts with *no* plan change in flight, and "Request a plan change" on the
+#    Account page has somewhere to go.
 Concierge::Proposal.propose(
-  scope_for(:billing, acme),
+  scope_for(:billing, globex),
   action_class: "record.plan_change",
-  payload: { from: "pro", to: "enterprise", reason: "seat count passed the enterprise floor" }
+  payload: { from: "enterprise", to: "pro",
+             reason: "procurement asked to drop a tier at renewal" }
 )
 
 # 3. Money. `:human_execution` — the engine records the decision and stops; a
@@ -272,3 +355,7 @@ puts "Slack cards: #{Concierge::SlackCard.posted.count} posted, " \
      "(#{Concierge.config.slack.daily_card_cap}/agent/day) — see /concierge/admin/slack. " \
      "Every one of them is decidable in the admin queue too."
 puts "Unsubscribe link to try: /concierge/unsubscribe/#{Concierge::ChannelDelivery.last.unsubscribe_token}"
+puts "Product: #{ChangelogEntry.published.count} published changelog entries, " \
+     "#{ChangelogEntry.drafts.count} drafts; " \
+     "#{InboxMessage.unread.count} unread in-app messages waiting."
+puts "Start here: http://localhost:3000 — sign in as #{User.order(:id).first.label}."

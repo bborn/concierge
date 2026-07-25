@@ -19,6 +19,7 @@ require "rails/test_help"
 require_relative "support/fake_chat"
 require_relative "support/dummy_config"
 require_relative "support/slack_transport"
+require_relative "support/host_app"
 
 # Load fixtures from the engine
 if ActiveSupport::TestCase.respond_to?(:fixture_paths=)

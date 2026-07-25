@@ -1,0 +1,58 @@
+<% content_for :title, "Inbox · Acme" %>
+
+<div class="page__head">
+  <div>
+    <h1>Inbox</h1>
+    <p class="lede">
+      What <%= csm_persona&.name || "your agent" %> and the billing team have sent
+      <%= current_tenant.name %> in the app.
+    </p>
+  </div>
+  <% if inbox.unread_count.positive? %>
+    <%= button_to "Mark all read", read_all_inbox_path, class: "btn", form_class: "inline-form" %>
+  <% end %>
+</div>
+
+<% if @items.any? %>
+  <div class="card card--flush">
+    <% @items.each do |item| %>
+      <div class="card__row msg <%= "msg--unread" unless item.read? %>">
+        <span class="avatar <%= "avatar--billing" if item.agent_slug == "billing" %>">
+          <%= item.agent_name.first %>
+        </span>
+        <div class="msg__body">
+          <div class="msg__head">
+            <span class="msg__who"><%= item.agent_name %></span>
+            <span class="faint"><%= item.sent_at.strftime("%-d %b, %H:%M") %></span>
+            <span class="pill"><%= item.kind %></span>
+            <% unless item.read? %><span class="pill pill--accent">new</span><% end %>
+          </div>
+          <div class="msg__text"><%= item.body %></div>
+          <% unless item.read? %>
+            <div class="actions" style="margin-top: 10px">
+              <%= button_to "Mark read", read_inbox_message_path(item.id),
+                            class: "btn btn--small", form_class: "inline-form" %>
+            </div>
+          <% end %>
+        </div>
+      </div>
+    <% end %>
+  </div>
+<% else %>
+  <div class="card empty">
+    <h2>Nothing yet</h2>
+    <p>
+      When <%= csm_persona&.name || "your agent" %> has something worth saying, it lands here.
+      <% if Rails.env.local? %>
+        You don't have to wait for the weekly sweep — open the chat panel and hit
+        “<%= csm_persona&.name || "Agent" %>, take a look”.
+      <% end %>
+    </p>
+  </div>
+<% end %>
+
+<p class="faint">
+  Every one of these has an audit row on the operator side:
+  <%= link_to "delivery log", concierge.admin_deliveries_path %> ·
+  <%= link_to "run provenance", concierge.admin_runs_path %>.
+</p>

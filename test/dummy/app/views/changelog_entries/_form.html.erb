@@ -1,0 +1,29 @@
+<%= form_with model: entry, url: url, method: method do |f| %>
+  <% if entry.errors.any? %>
+    <div class="flash errors">
+      <strong>That didn't save.</strong>
+      <ul>
+        <% entry.errors.full_messages.each do |message| %>
+          <li><%= message %></li>
+        <% end %>
+      </ul>
+    </div>
+  <% end %>
+
+  <div class="card">
+    <div class="field">
+      <%= f.label :title %>
+      <%= f.text_field :title, placeholder: "What shipped?" %>
+    </div>
+
+    <div class="field">
+      <%= f.label :body, "Notes" %>
+      <%= f.text_area :body, placeholder: "The bits your customers care about." %>
+    </div>
+
+    <div class="actions">
+      <%= f.submit submit_label, class: "btn btn--primary" %>
+      <%= link_to "Cancel", changelog_entries_path, class: "btn" %>
+    </div>
+  </div>
+<% end %>

@@ -1,0 +1,65 @@
+<% content_for :title, "Changelog · Acme" %>
+
+<div class="page__head">
+  <div>
+    <h1>Changelog</h1>
+    <p class="lede">What <%= current_tenant.name %> has shipped, and what's still a draft.</p>
+  </div>
+  <%= link_to "New entry", new_changelog_entry_path, class: "btn btn--primary" %>
+</div>
+
+<% if @entries.any? %>
+  <div class="card card--flush">
+    <% @entries.each do |entry| %>
+      <div class="card__row">
+        <div class="actions" style="justify-content: space-between; align-items: flex-start">
+          <div>
+            <div class="entry__title"><%= entry.title %></div>
+            <div class="entry__meta">
+              <% if entry.published? %>
+                Published <%= entry.published_at&.strftime("%-d %b %Y") %>
+              <% else %>
+                Draft · last edited <%= time_ago_in_words(entry.updated_at) %> ago
+              <% end %>
+              <% if entry.author %> · <%= entry.author.display_name %><% end %>
+            </div>
+          </div>
+          <span class="pill <%= entry.published? ? 'pill--good' : 'pill--warn' %>">
+            <%= entry.status %>
+          </span>
+        </div>
+
+        <% if entry.body.present? %>
+          <p class="entry__body"><%= truncate(entry.body, length: 260) %></p>
+        <% end %>
+
+        <div class="actions">
+          <%= link_to "Edit", edit_changelog_entry_path(entry), class: "btn btn--small" %>
+          <% if entry.published? %>
+            <%= button_to "Unpublish", unpublish_changelog_entry_path(entry),
+                          class: "btn btn--small", form_class: "inline-form" %>
+          <% else %>
+            <%= button_to "Publish", publish_changelog_entry_path(entry),
+                          class: "btn btn--small btn--primary", form_class: "inline-form" %>
+          <% end %>
+        </div>
+      </div>
+    <% end %>
+  </div>
+<% else %>
+  <div class="card empty">
+    <h2>Nothing here yet</h2>
+    <p>
+      <%= current_tenant.name %> hasn't written a changelog entry.
+      Publishing the first one is the whole point of Acme — and it's the thing
+      <%= csm_persona&.name || "your agent" %> keeps bringing up.
+    </p>
+    <%= link_to "Write the first entry", new_changelog_entry_path, class: "btn btn--primary" %>
+  </div>
+<% end %>
+
+<% if @published.zero? && @entries.any? %>
+  <p class="faint">
+    Nothing published yet — <%= csm_persona&.name || "your agent" %> can see that too.
+  </p>
+<% end %>
