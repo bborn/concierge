@@ -188,6 +188,86 @@ Concierge::OutreachPreference.create!(**subject_for(initech).key, opted_out: tru
 
 Concierge::Handoff.seize!(scope_for(:csm, globex), operator: "bruno@acme.test")
 
+# --- Rules: the human-gated behavioral layer (design §10.2) -------------------
+# Memory is what the agent knows about a relationship. A *rule* is a generalized,
+# versioned instruction about how it behaves — and it only goes into force when a
+# human taps Approve. Nothing below activates itself.
+#
+# Rules are seeded before the proposals and runs below because both of those
+# *cite* them, and a citation is only legible once the rule it names exists.
+
+# Three in force, one of them account-specific, one a code-enforced guard.
+#
+# A rule is an instruction a human put in force over the agent's own judgement,
+# so what gets seeded here is also an example of what such an instruction may
+# ask for. Tone, phrasing and what to point at: yes. Hiding what the agent is:
+# no — if a customer asks whether they are talking to a bot, the answer is yes,
+# and no rule in this demo pretends otherwise.
+in_force = [
+  [ :csm,     nil,  :agent,
+    "Never promise or imply a delivery date; point them at the status page instead.",
+    "advisory", nil ],
+  [ :csm,     acme, :subject,
+    "Acme's CEO is skeptical of AI tooling — keep the tone low-key and understated; " \
+    "no hype, no exclamation marks.",
+    "advisory", nil ],
+  [ :billing, nil,  :agent,
+    "Never put the word \"guarantee\" in a billing email.",
+    "guard",
+    { "action_class" => "message.outreach", "deny_when" => { "body" => { "matches" => "guarantee" } } } ]
+].map do |slug, tenant, applies_to, body, enforcement, predicate|
+  scope = scope_for(slug, tenant || acme)
+  rule  = Concierge::Rules.propose(
+    scope, body: body, applies_to: applies_to, enforcement: enforcement,
+    predicate: predicate, author: "dana@acme.test",
+    provenance: { "source" => "authored" }
+  )
+  Concierge::Rules.activate!(rule, by: "operator@acme.test")
+  # These have been in force for a month, so the weekly dreaming job has a real
+  # sample to reason about rather than three rules approved a second ago.
+  rule.update_column(:activated_at, 30.days.ago)
+  rule
+end
+
+# Named here because the proposal and the runs below both cite one of them.
+blanket, account_specific, billing_guard = in_force
+
+# A segment rule: applies to enterprise accounts only (see `segments_for` in the
+# initializer), so Globex sees it and Acme does not.
+enterprise_rule = Concierge::Rules.propose(
+  scope_for(:csm, globex),
+  body: "For enterprise accounts, cite the SOC 2 report by name when asked about security.",
+  applies_to: :segment, segment: "enterprise", author: "dana@acme.test",
+  provenance: { "source" => "authored" }
+)
+Concierge::Rules.activate!(enterprise_rule, by: "operator@acme.test")
+
+# A proposal card awaiting a human tap, drafted from a verbatim human correction —
+# the write path §10.2 specifies, minus the job (which the app runs for real).
+Concierge::Rules.propose(
+  scope_for(:billing, acme),
+  body:   "Always attach the invoice PDF to a billing email.",
+  author: Concierge::Rules.agent_actor(:billing),
+  provenance: {
+    "source"       => "human_correction",
+    "verbatim"     => "You sent Dana an invoice email with no PDF attached again. " \
+                      "Always attach the invoice PDF.",
+    "corrected_by" => "bruno@acme.test"
+  }
+)
+
+# ...and one that *contradicts* a rule already in force, so the conflict check has
+# something to surface. It cannot be approved until a human resolves it.
+Concierge::Rules.propose(
+  scope_for(:csm, acme),
+  body:   "Always promise a delivery date; the status page confuses them.",
+  author: Concierge::Rules.agent_actor(:csm),
+  provenance: { "source" => "human_correction",
+                "verbatim" => "Always promise a delivery date. The status page confuses " \
+                              "them and being vague loses deals.",
+                "corrected_by" => "hank@globex.test" }
+)
+
 # --- Proposals: actions an agent staged because it may not perform them --------
 # :billing declares `default :human_approval` and `money.refund: :human_execution`,
 # so its work stages for a human instead of happening. The CSM stays
@@ -199,10 +279,17 @@ Concierge::Handoff.seize!(scope_for(:csm, globex), operator: "bruno@acme.test")
 #    draft the frequency cap would suppress never becomes a card at all. (Acme
 #    asked for less email and heard from billing five days ago, which is why this
 #    one is Globex's.)
+#
+#    It carries a rule citation, so the provenance line on the card has something
+#    to say — in the admin queue and in Slack alike. The claim is the model's own
+#    and is displayed as exactly that: the same guard it names is enforced in code
+#    precisely because an agent can cite a rule and contradict it in the same
+#    breath (§10.4).
 Concierge::Outreach.deliver(
   Concierge::Result.new(
     reply_text: "Heads up: the card on file expires before the next invoice date. " \
-                "Want me to send Hank a link to update it?"
+                "Want me to send Hank a link to update it?",
+    rule_ids_applied: [ billing_guard.id ]
   ),
   scope_for(:billing, globex), channel: :email
 )
@@ -244,85 +331,9 @@ Concierge::ApprovalIntake.reject(
   reason: "they never completed onboarding — upgrading them would be the wrong call"
 )
 
-# --- Rules: the human-gated behavioral layer (design §10.2) -------------------
-# Memory is what the agent knows about a relationship. A *rule* is a generalized,
-# versioned instruction about how it behaves — and it only goes into force when a
-# human taps Approve. Nothing below activates itself.
-
-# Three in force, one of them account-specific, one a code-enforced guard.
-#
-# A rule is an instruction a human put in force over the agent's own judgement,
-# so what gets seeded here is also an example of what such an instruction may
-# ask for. Tone, phrasing and what to point at: yes. Hiding what the agent is:
-# no — if a customer asks whether they are talking to a bot, the answer is yes,
-# and no rule in this demo pretends otherwise.
-in_force = [
-  [ :csm,     nil,  :agent,
-    "Never promise or imply a delivery date; point them at the status page instead.",
-    "advisory", nil ],
-  [ :csm,     acme, :subject,
-    "Acme's CEO is skeptical of AI tooling — keep the tone low-key and understated; " \
-    "no hype, no exclamation marks.",
-    "advisory", nil ],
-  [ :billing, nil,  :agent,
-    "Never put the word \"guarantee\" in a billing email.",
-    "guard",
-    { "action_class" => "message.outreach", "deny_when" => { "body" => { "matches" => "guarantee" } } } ]
-].map do |slug, tenant, applies_to, body, enforcement, predicate|
-  scope = scope_for(slug, tenant || acme)
-  rule  = Concierge::Rules.propose(
-    scope, body: body, applies_to: applies_to, enforcement: enforcement,
-    predicate: predicate, author: "dana@acme.test",
-    provenance: { "source" => "authored" }
-  )
-  Concierge::Rules.activate!(rule, by: "operator@acme.test")
-  # These have been in force for a month, so the weekly dreaming job has a real
-  # sample to reason about rather than three rules approved a second ago.
-  rule.update_column(:activated_at, 30.days.ago)
-  rule
-end
-
-# A segment rule: applies to enterprise accounts only (see `segments_for` in the
-# initializer), so Globex sees it and Acme does not.
-enterprise_rule = Concierge::Rules.propose(
-  scope_for(:csm, globex),
-  body: "For enterprise accounts, cite the SOC 2 report by name when asked about security.",
-  applies_to: :segment, segment: "enterprise", author: "dana@acme.test",
-  provenance: { "source" => "authored" }
-)
-Concierge::Rules.activate!(enterprise_rule, by: "operator@acme.test")
-
-# A proposal card awaiting a human tap, drafted from a verbatim human correction —
-# the write path §10.2 specifies, minus the job (which the app runs for real).
-Concierge::Rules.propose(
-  scope_for(:billing, acme),
-  body:   "Always attach the invoice PDF to a billing email.",
-  author: Concierge::Rules.agent_actor(:billing),
-  provenance: {
-    "source"       => "human_correction",
-    "verbatim"     => "You sent Dana an invoice email with no PDF attached again. " \
-                      "Always attach the invoice PDF.",
-    "corrected_by" => "bruno@acme.test"
-  }
-)
-
-# ...and one that *contradicts* a rule already in force, so the conflict check has
-# something to surface. It cannot be approved until a human resolves it.
-Concierge::Rules.propose(
-  scope_for(:csm, acme),
-  body:   "Always promise a delivery date; the status page confuses them.",
-  author: Concierge::Rules.agent_actor(:csm),
-  provenance: { "source" => "human_correction",
-                "verbatim" => "Always promise a delivery date. The status page confuses " \
-                              "them and being vague loses deals.",
-                "corrected_by" => "hank@globex.test" }
-)
-
 # --- Run provenance: what each turn was actually told (design §10.4) -----------
 # Enough history for the dreaming job to have something to reason about: the
 # account-specific rule gets cited, the blanket one never does.
-
-blanket, account_specific = in_force
 
 6.times do |i|
   Concierge::AgentRun.create!(
