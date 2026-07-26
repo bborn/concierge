@@ -17,6 +17,7 @@ ActiveRecord::Migrator.migrations_paths = [ File.expand_path("../test/dummy/db/m
 require "rails/test_help"
 
 require_relative "support/fake_chat"
+require_relative "support/offline_provider"
 require_relative "support/dummy_config"
 require_relative "support/slack_transport"
 require_relative "support/host_app"

@@ -50,9 +50,14 @@ module Concierge
 
       reply = chat.ask(@trigger[:message])
       success(reply)
-    rescue RubyLLM::Error => e
+    rescue RubyLLM::Error, RubyLLM::ConfigurationError => e
       # Streaming may deliver partial tool-call args and errors mid-stream; the
       # harness absorbs both so a bad turn never crashes the host (design §6).
+      #
+      # ConfigurationError is listed separately because RubyLLM derives it from
+      # StandardError, not from RubyLLM::Error — so a host with no API key was
+      # blowing straight through this rescue and out to the caller, breaking the
+      # one promise this class makes.
       record_provenance(status: "failed", error_class: e.class.name)
       Result.failure(e, model: model)
     end
