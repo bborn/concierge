@@ -77,10 +77,6 @@ module Concierge
       result.equal?(__getobj__) ? self : result
     end
 
-    def respond_to_missing?(...)
-      super
-    end
-
     private
 
     # Never fails the turn. A host message store that refuses a write is a
