@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_07_26_090003) do
+ActiveRecord::Schema[8.1].define(version: 2026_07_26_090004) do
   create_table "active_storage_attachments", force: :cascade do |t|
     t.bigint "blob_id", null: false
     t.datetime "created_at", null: false
@@ -140,6 +140,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_26_090003) do
     t.string "error_class"
     t.integer "input_tokens"
     t.text "memory_ids"
+    t.bigint "message_id"
     t.string "model"
     t.integer "output_tokens"
     t.text "rule_ids_applied"

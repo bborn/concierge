@@ -1,0 +1,119 @@
+<p><%= link_to "&larr; All runs".html_safe, admin_runs_path %></p>
+
+<h1>Run #<%= @run.id %></h1>
+
+<dl>
+  <dt>When</dt>
+  <dd><%= @run.created_at %></dd>
+
+  <dt>Agent</dt>
+  <dd><%= @run.agent_slug %> &middot; <%= @run.subject_type %>#<%= @run.subject_id %></dd>
+
+  <dt>Trigger</dt>
+  <dd><%= @run.trigger %></dd>
+
+  <dt>Status</dt>
+  <dd><%= @run.status %><%= " (#{@run.error_class})" if @run.error_class %></dd>
+
+  <dt>Model</dt>
+  <dd><%= @run.model || "—" %> &middot; <%= @run.total_tokens %> tokens</dd>
+
+  <dt>Snapshot</dt>
+  <dd><code><%= @run.snapshot_digest %></code></dd>
+
+  <dt>Memories injected</dt>
+  <dd><%= @run.memory_ids.any? ? @run.memory_ids.join(", ") : "none" %></dd>
+</dl>
+
+<h2>Rules injected <small>(engine — evidence)</small></h2>
+
+<p>
+  Written by the engine from the rule set it rendered into the prompt, pinned at
+  the version each rule was then. This is evidence of what the agent
+  <strong>was told</strong>.
+</p>
+
+<% if @run.rules.any? %>
+  <ul>
+    <% @run.injected_rule_texts.each do |text| %>
+      <li><%= text %></li>
+    <% end %>
+  </ul>
+<% else %>
+  <p><em>No rules were in force for this run.</em></p>
+<% end %>
+
+<h2>Rules the agent <em>claims</em> it applied <small>(unverified)</small></h2>
+
+<p>
+  A line the model wrote in its own reply. It is <strong>not</strong> proof any of
+  these rules was followed — a model has been observed contradicting a rule while
+  sincerely citing it, and that turn records exactly like a compliant one.
+</p>
+
+<p>
+  <% if @run.rule_ids_applied.any? %>
+    <%= @run.rule_ids_applied.join(", ") %> — <em>claimed, not verified</em>
+  <% else %>
+    <em>Nothing cited.</em>
+  <% end %>
+</p>
+
+<% if @run.unknown_citations? %>
+  <p><strong>Cited but never injected: <%= @run.unknown_rule_ids.join(", ") %>.</strong>
+    An id the model produced that was not in its prompt — invented, or from a scope
+    it should never have seen.</p>
+<% end %>
+
+<h2>What the agent actually said</h2>
+
+<p>
+  The check the engine cannot perform. Read this against the claim above: a rule
+  cited and followed and a rule cited and contradicted are indistinguishable on
+  every other line of this page.
+</p>
+
+<% if (reply = @run.reply_text) %>
+  <%# Verbatim and fully escaped. This is untrusted model output on an operator's
+      screen: anything that renders it as markup lets a reply put a link, or a
+      bolded reassurance, into the very page an auditor is reading it on. %>
+  <pre class="concierge-reply"><%= reply %></pre>
+
+  <p>
+    <small>
+      Read live from the host's own chat tables
+      (chat #<%= @run.chat_id %>, message #<%= @run.message_id %>); Concierge keeps a
+      pointer, never a copy, so how long these words are retained stays the host's
+      decision. This is the <strong>raw</strong> message the model produced — the
+      citation line is still on it, because the engine strips that only from the
+      reply it hands to a channel, never from the host's record of the turn.
+    </small>
+  </p>
+<% else %>
+  <p>
+    <em>
+      <% case @run.reply_unavailable_reason %>
+      <% when :no_host_chat %>
+        No host chat was recorded for this run, so there is no message to read.
+        The engine had no provider credentials at the time, or the host's
+        <code>chat_factory</code> does not persist conversations — either way this
+        turn's words were never written down anywhere Concierge can reach.
+      <% when :not_persisted %>
+        This run used host chat #<%= @run.chat_id %>, but no assistant message was
+        persisted for the turn, so there is nothing to read back.
+      <% else %>
+        The host has pruned this message (chat #<%= @run.chat_id %>,
+        message #<%= @run.message_id %>). Retention of customer conversations is the
+        host's call, not the engine's — the link is kept so the gap is visible
+        rather than silent.
+      <% end %>
+    </em>
+  </p>
+
+  <p>
+    <small>
+      With no reply to read, this run's citation <strong>cannot be spot-checked at
+      all</strong>. Treat it as unverified, not as compliant.
+    </small>
+  </p>
+<% end %>

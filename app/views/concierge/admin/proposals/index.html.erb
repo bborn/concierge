@@ -49,7 +49,7 @@
       <dd>
         <%= proposal.created_by %> at <%= proposal.proposed_at %>
         <% if proposal.agent_run_id %>
-          (<%= link_to "run ##{proposal.agent_run_id}", admin_runs_path %>)
+          (<%= link_to "run ##{proposal.agent_run_id}", admin_run_path(proposal.agent_run_id) %>)
         <% end %>
       </dd>
 
