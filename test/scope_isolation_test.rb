@@ -664,6 +664,54 @@ module Concierge
       end
     end
 
+    # The engine now writes the *customer's* turn into the host's message store
+    # too, which is a second crossing of the same boundary and a worse one to get
+    # wrong: a reply is the agent's own words, but a question is the customer's.
+    # Four cells asking four different things must produce four sealed threads —
+    # if the write picked the wrong chat, Acme's question would be sitting in
+    # Globex's conversation and would be replayed into Globex's next prompt.
+    test "a customer's question is written into its own cell's chat and no other" do
+      Concierge.config.chat_factory = persisting_chat_factory
+
+      runs = @grid.to_h do |(agent_slug, account), scope|
+        record = with_model_reply("reply for #{agent_slug}/#{account}") do
+          Concierge::Run.reactive(scope, "secret question from #{agent_slug}/#{account}")
+        end.run_record
+        [ [ agent_slug, account ], record ]
+      end
+
+      assert_equal 4, runs.values.map(&:prompt_message_id).uniq.compact.size,
+                   "two cells shared a customer message"
+
+      runs.each do |(agent_slug, account), run|
+        assert_equal "secret question from #{agent_slug}/#{account}", run.prompt_text
+        assert_equal run.chat_id, run.prompt_message.chat_id,
+                     "#{agent_slug}/#{account}'s question landed in another cell's chat"
+
+        # ...and the thread that gets replayed into this cell's next prompt holds
+        # this cell's words only.
+        asked = Concierge.chat_model.find(run.chat_id).messages.where(role: "user").pluck(:content)
+        assert_equal [ "secret question from #{agent_slug}/#{account}" ], asked
+      end
+    end
+
+    test "a run pointed at a neighbour's question reads nothing rather than their words" do
+      Concierge.config.chat_factory = persisting_chat_factory
+
+      mine = with_model_reply("reply for csm/acme") do
+        Concierge::Run.reactive(@grid[[ :csm, :acme ]], "what Acme asked")
+      end.run_record
+      theirs = with_model_reply("reply for billing/globex") do
+        Concierge::Run.reactive(@grid[[ :billing, :globex ]], "what Globex asked")
+      end.run_record
+
+      mine.update!(prompt_message_id: theirs.prompt_message_id)
+
+      assert_nil mine.reload.prompt_message, "a run reached into another cell's chat"
+      assert_nil mine.prompt_text
+      assert_equal :pruned, mine.prompt_unavailable_reason
+    end
+
     test "a run pointed at a neighbour's message reads nothing rather than their words" do
       Concierge.config.chat_factory = persisting_chat_factory
 

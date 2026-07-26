@@ -8,6 +8,7 @@ end
 
 require "concierge/version"
 require "concierge/dsl"
+require "concierge/persistent_chat"
 require "concierge/authority"
 require "concierge/agent"
 require "concierge/configuration"

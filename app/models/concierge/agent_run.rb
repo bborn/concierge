@@ -98,6 +98,35 @@ module Concierge
       reply_message&.content.presence
     end
 
+    # The turn the reply answered — the customer's question on a reactive run,
+    # the outreach instruction on a proactive one. Resolved through this run's own
+    # chat, exactly like the reply, so a wrong or stale id can only fail to
+    # resolve and can never surface another agent's or another account's words.
+    #
+    # Without it a reply is barely evidence at all: "no, we can't do that" reads
+    # as either perfectly compliant or a fireable offence depending entirely on
+    # what was asked. The pair is what makes a cited rule spot-checkable.
+    def prompt_message
+      return unless prompt_message_id
+
+      messages_of(chat_record)&.find_by(id: prompt_message_id)
+    end
+
+    def prompt_text
+      prompt_message&.content.presence
+    end
+
+    # Why the question cannot be read, when it cannot. nil means it can. Runs
+    # recorded before the customer's turn was persisted at all have no pointer
+    # and read as :not_persisted, which is the truth about them.
+    def prompt_unavailable_reason
+      return if prompt_text
+      return :no_host_chat if chat_id.nil?
+      return :not_persisted if prompt_message_id.nil?
+
+      :pruned
+    end
+
     # Why the reply cannot be read, when it cannot. nil means it can.
     def reply_unavailable_reason
       return if reply_text

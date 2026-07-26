@@ -361,6 +361,11 @@ end
 # operator two rows they have no way to separate; with it, the demo makes the
 # distinction the whole screen exists for readable at a glance.
 #
+# Each turn seeds both messages — the question and the answer. The engine writes
+# both on the online path now (Concierge::PersistentChat); before it did, only the
+# reply was ever persisted, and the run screen had a reply with nothing on the
+# other side of it to read the reply against.
+#
 # The host's chat rows are written directly rather than by running a turn: with
 # no API key there is no provider, so acts_as_chat cannot create a Chat at all
 # (see ChatResolver) and the offline demo has no persisted conversation of its
@@ -372,13 +377,22 @@ demo_chat_id = Chat.insert_all(
 ).first["id"]
 
 [
-  [ "Nothing's overdue on your side. Exports are still on the roadmap; the status " \
+  [ "Do I owe you anything before the exports feature lands?",
+    "Nothing's overdue on your side. Exports are still on the roadmap; the status " \
     "page is the place to watch for it.",
     "obeyed the tone rule", 6.hours.ago ],
-  [ "Great news!!! Exports are going to be a game-changer for you — this is going " \
+  [ "Any update on exports?",
+    "Great news!!! Exports are going to be a game-changer for you — this is going " \
     "to completely transform how Acme works!",
     "cited the tone rule and did the opposite", 5.hours.ago ]
-].each do |body, note, at|
+].each do |asked, body, note, at|
+  # Both halves of the turn, as an online host now records them. The question is
+  # not decoration: a reply is only checkable against what it was answering.
+  prompt_message_id = Message.insert_all(
+    [ { chat_id: demo_chat_id, role: "user", content: asked,
+        created_at: at, updated_at: at } ]
+  ).first["id"]
+
   message_id = Message.insert_all(
     [ { chat_id: demo_chat_id, role: "assistant", input_tokens: 940, output_tokens: 130,
         content: "#{body}\n\n#{Concierge::Rules::CITATION_PREFIX} #{account_specific.id}",
@@ -395,7 +409,7 @@ demo_chat_id = Chat.insert_all(
     memory_ids: Concierge::Memory.for_scope(scope_for(:csm, acme)).limit(2).pluck(:id),
     rules: [ blanket.pin, account_specific.pin ],
     rule_ids_applied: [ account_specific.id ],
-    chat_id: demo_chat_id, message_id: message_id,
+    chat_id: demo_chat_id, message_id: message_id, prompt_message_id: prompt_message_id,
     created_at: at
   )
   # `note` is for the reader of this file only: nothing on the row says which is

@@ -47,6 +47,25 @@ have them yet, run `bin/rails generate ruby_llm:install` first. Do **not** add
 `validates :content, presence: true` to the `Message` model — RubyLLM writes the
 assistant message empty first.
 
+### What lands in your `messages` table
+
+Each turn writes **two** rows there: the customer's question and the agent's
+reply. Both, because a thread is rebuilt from those rows on the next turn — a
+transcript missing one side is a conversation the model reads as its own
+monologue, and a thread whose first row is an assistant one is rejected outright
+by Anthropic.
+
+The assembled **system prompt is deliberately not written there**. It is rebuilt
+fresh every run from the account's memories, the rules in force and a live
+snapshot, so persisting it would copy your customers' memory into your
+customer-facing message store on every single turn — a retention decision that is
+yours, not the engine's — and leave a stale copy behind for the next turn to
+replay next to the fresh one.
+
+If you supply your own `config.chat_factory`, you own those semantics: wrap your
+chat in `Concierge::PersistentChat` to keep the same behaviour, or don't, and
+persist nothing.
+
 ## Configuration
 
 Everything is declared in `config/initializers/concierge.rb`:
