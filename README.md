@@ -552,12 +552,15 @@ the point). From there:
    visibly steps back until you hand the thread back.
 
 It runs **offline**: with `ANTHROPIC_API_KEY` unset a scripted stand-in answers,
-so a keyless host still works. Concierge notices the missing credential itself —
-when the configured provider has no key it runs *without a persisted
-conversation*, because persisting a `Chat` makes RubyLLM resolve a model, and
-resolving instantiates the provider. Chat history stops being saved (and says so
-in the log) but the turn still happens. A keyless host that has **not** supplied
-an offline `chat_factory` gets a failed `Result` carrying the
+so a keyless host still works — and it works *the same way*, on the same code
+path. Concierge resolves the host's model record itself rather than handing
+`acts_as_chat` a model name, so creating the persisted `Chat` never instantiates
+a provider and never needs a credential. A keyless host gets a real
+`Conversation`, real message rows, and run provenance that links to them, which
+is what makes every transcript screen in this demo readable without an API key.
+Concierge still notices the missing credential and says so in the log once, when
+it opens the conversation. A keyless host that has **not** supplied an offline
+`chat_factory` gets a failed `Result` carrying the
 `RubyLLM::ConfigurationError`, never a raise and never a false success.
 
 Export a real key and the same UI drives a real model over the same prompt —

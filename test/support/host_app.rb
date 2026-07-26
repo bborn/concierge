@@ -61,6 +61,22 @@ module Concierge
         )
       end
 
+      # The host as a genuinely keyless demo: the environment variable gone, the
+      # config re-read so ConciergeSetup installs its offline stand-in instead of
+      # leaving FakeChat in place, and RubyLLM's credentials blanked so nothing
+      # downstream can quietly succeed on the suite's key.
+      #
+      # Scoped to a block, because the point of test_helper setting a key is that
+      # no test reaches a model by accident — this one reaches the host's scripted
+      # chat on purpose, which is the only thing a keyless demo ever talks to.
+      def with_keyless_host
+        saved = ENV.delete("ANTHROPIC_API_KEY")
+        Concierge.configure { |c| Dummy::ConciergeSetup.apply(c) }
+        without_provider_credentials { yield }
+      ensure
+        ENV["ANTHROPIC_API_KEY"] = saved
+      end
+
       # CSRF is off in the test environment by default, which is exactly why the
       # engine's chat endpoint had never been exercised the way a browser drives
       # it. Turning it on for one test is the only way to prove the pairing.

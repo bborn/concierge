@@ -109,14 +109,21 @@ module Concierge
       assert_equal :not_persisted, run.reply_unavailable_reason
     end
 
-    test "an uncredentialed run has no host chat to read a reply from" do
+    # An uncredentialed run *does* have a host chat now (task 5017) — the engine
+    # resolves the model record itself, so opening the conversation never needs a
+    # provider. What it may still lack is a message in it, because that is the
+    # host's factory's job and this one is a double that keeps nothing. The screen
+    # has to say which of the two it is: "no conversation was ever opened" and
+    # "the conversation exists and this turn left nothing in it" send an operator
+    # to different places.
+    test "an uncredentialed run has a host chat, and says when nothing was written in it" do
       without_provider_credentials do
         Concierge::Test::FakeChat.script(reply: "Offline reply.")
         run = Concierge::Run.reactive(@csm, "hi").run_record
 
-        assert_nil run.chat_id
+        assert run.chat_id, "a keyless run recorded no host chat"
         assert_nil run.message_id
-        assert_equal :no_host_chat, run.reply_unavailable_reason
+        assert_equal :not_persisted, run.reply_unavailable_reason
       end
     end
 

@@ -598,22 +598,30 @@ module Concierge
       end
     end
 
-    # The offline path is a degrade, and a degrade is exactly where an invariant
-    # gets quietly dropped. With no provider credentials there is no persisted
-    # Chat to key by, so the grid loses the one thing that normally keeps two
-    # agents' threads apart — which would be a fine place to accidentally hand
-    # every cell the same conversation. It must not: each cell still gets its own
-    # chat object, and no cell may be handed a neighbour's persisted one.
-    test "the uncredentialed path hands no cell a chat, and none a neighbour's" do
-      without_provider_credentials do
-        chats = @grid.transform_values { |scope| Concierge::ChatResolver.call(scope) }
-
-        assert_equal [ nil ], chats.values.uniq,
-                     "a cell was handed a chat record the provider could not have created"
+    # The offline path used to keep the grid apart by holding nothing: with no
+    # credentials there was no persisted Chat to key by at all, so the question was
+    # only whether every cell got the same nil. It now persists — a keyless host
+    # gets a real conversation per cell (task 5017) — which turns a degrade with no
+    # state into a second full set of host chats written by a path the credentialed
+    # tests never take. That is a new place for the boundary to leak, so the grid
+    # asks the same question of it that it asks of the online path.
+    test "the uncredentialed path gives every cell its own chat, and no neighbour's" do
+      chats = without_provider_credentials do
+        @grid.transform_values { |scope| Concierge::ChatResolver.call(scope) }
       end
 
-      assert_equal 0, Concierge::Conversation.count,
-                   "conversations were recorded for chats that were never created"
+      assert_equal 4, chats.values.compact.map(&:id).uniq.size,
+                   "two cells were handed the same Chat with no credentials"
+      assert_equal 4, Concierge::Conversation.count
+
+      @grid.each do |(agent_slug, account), scope|
+        conversations = Concierge::Conversation.for_scope(scope)
+
+        assert_equal 1, conversations.count,
+                     "#{agent_slug}/#{account} did not own exactly one offline conversation"
+        assert_equal chats[[ agent_slug, account ]].id, conversations.first.chat_id,
+                     "#{agent_slug}/#{account} was pointed at another cell's offline chat"
+      end
     end
 
     test "an uncredentialed run keeps every cell's prompt and provenance its own" do
@@ -627,11 +635,19 @@ module Concierge
         end
       end
 
+      chat_ids = @grid.to_h do |cell, scope|
+        [ cell, Concierge::AgentRun.for_scope(scope).first&.chat_id ]
+      end
+
+      assert_equal 4, chat_ids.values.compact.uniq.size,
+                   "two offline runs recorded the same host chat"
+
       @grid.each do |(agent_slug, account), scope|
         runs = Concierge::AgentRun.for_scope(scope)
 
         assert_equal 1, runs.count, "#{agent_slug}/#{account} saw #{runs.count} runs"
-        assert_nil runs.first.chat_id, "an offline run claimed a chat it never had"
+        assert_equal Concierge::Conversation.for_scope(scope).first.chat_id, runs.first.chat_id,
+                     "an offline run recorded a chat belonging to another cell"
       end
 
       # Each cell's memory is still only its own — the degrade did not widen any
@@ -642,22 +658,52 @@ module Concierge
       end
     end
 
-    # Both tests above prove the degrade keeps the grid apart. Neither proved the
-    # degrade still *happens*, because both inherit the dummy's default_provider
-    # and so ask about :anthropic directly. A host that leaves default_provider
-    # nil — documented and supported — puts the whole gate on the model lookup,
-    # and that lookup goes to whichever registry RubyLLM memoized: the host's own
-    # `models` table once acts_as_model has a row in it, holding only the models
-    # this host has already talked to. Every other model then read as "unknown,
-    # assume credentials are fine", the gate stopped firing, and the four cells
-    # went down the *online* path with no key — raising ModelNotFoundError out of
-    # a before_save mid-grid. Which is worse than a leak in one respect: the run
-    # that raises has already written its AgentRun row, so the grid is left half
-    # populated by a path nobody chose.
+    # ...and with a host whose offline factory actually *writes* the turn down,
+    # the words themselves must land in the right cell. This is the same crossing
+    # the online transcript test guards, asked of the path a keyless host takes,
+    # because that path now writes customer questions into a host message store
+    # too. The factory is the demo host's own — not a double written for this
+    # test — so what is under test is the code the offline server really runs.
+    test "an uncredentialed turn writes its words into its own cell's chat and no other" do
+      Concierge.config.chat_factory = lambda do |model:, chat_record: nil|
+        Dummy::ScriptedChat.new(chat_record)
+      end
+
+      without_provider_credentials do
+        @grid.each do |(agent_slug, account), scope|
+          Concierge::Run.reactive(scope, "secret question from #{agent_slug}/#{account}")
+        end
+      end
+
+      @grid.each do |(agent_slug, account), scope|
+        run = Concierge::AgentRun.for_scope(scope).first
+
+        assert_equal "secret question from #{agent_slug}/#{account}", run.prompt_text
+        assert_equal run.chat_id, run.prompt_message.chat_id,
+                     "#{agent_slug}/#{account}'s question landed in another cell's chat"
+
+        # The thread replayed into this cell's next prompt holds this cell's words
+        # only — a keyless host is still a host with a conversation to protect.
+        asked = Concierge.chat_model.find(run.chat_id).messages.where(role: "user").pluck(:content)
+        assert_equal [ "secret question from #{agent_slug}/#{account}" ], asked
+      end
+    end
+
+    # Both tests above inherit the dummy's default_provider and so never touch the
+    # model registry at all: a host that names its provider assumes the model
+    # exists. A host that leaves default_provider nil — documented and supported —
+    # puts the whole resolution on the model lookup, and that lookup goes to
+    # whichever registry RubyLLM memoized: the host's own `models` table once
+    # acts_as_model has a row in it, holding only the models this host has already
+    # talked to. Every other model reads as unknown there, which used to switch the
+    # offline degrade off entirely (task 5014) and now, with the resolution ours,
+    # would fail the resolution instead — mid-grid, after the first cells had
+    # already written their AgentRun rows, leaving the grid half populated by a
+    # path nobody chose.
     #
-    # So this is the same isolation question asked in the configuration where the
-    # degrade was silently switched off.
-    test "a partial registry does not switch the degrade off under any cell" do
+    # So this is the same isolation question asked in the one configuration where
+    # the lookup is load-bearing.
+    test "a partial registry leaves every cell resolvable, and still its own" do
       Concierge.config.default_provider = nil
 
       with_partial_model_registry("gpt-4.1-nano" => "openai") do
@@ -666,8 +712,8 @@ module Concierge
             assert_nothing_raised { Concierge::ChatResolver.call(scope) }
           end
 
-          assert_equal [ nil ], chats.values.uniq,
-                       "a cell was handed a chat record the provider could not have created"
+          assert_equal 4, chats.values.compact.map(&:id).uniq.size,
+                       "a cell was handed another cell's chat under a partial registry"
 
           @grid.each do |(agent_slug, account), scope|
             Concierge::Test::FakeChat.script(reply: "offline reply for #{agent_slug}/#{account}")
@@ -679,28 +725,30 @@ module Concierge
         end
       end
 
-      assert_equal 0, Concierge::Conversation.count,
-                   "conversations were recorded for chats that were never created"
+      assert_equal 4, Concierge::Conversation.count
 
       @grid.each do |(agent_slug, account), scope|
         runs = Concierge::AgentRun.for_scope(scope)
 
         assert_equal 1, runs.count, "#{agent_slug}/#{account} saw #{runs.count} runs"
-        assert_nil runs.first.chat_id, "an offline run claimed a chat it never had"
+        assert_equal Concierge::Conversation.for_scope(scope).first.chat_id, runs.first.chat_id,
+                     "a run under a partial registry recorded another cell's chat"
         assert_equal [ "private note for #{agent_slug}/#{account}" ],
                      Concierge::Memory.for_scope(scope).map(&:body)
       end
     end
 
     # Credentials coming back must not merge cells either: two agents over one
-    # account still get two conversations, exactly as when they never went away.
+    # account still get two conversations — the same two they had offline, now
+    # continued rather than replaced.
     test "credentials returning still yields one conversation per (agent, account)" do
-      without_provider_credentials do
-        @grid.each_value { |scope| Concierge::ChatResolver.call(scope) }
+      offline = without_provider_credentials do
+        @grid.transform_values { |scope| Concierge::ChatResolver.call(scope).id }
       end
 
       chat_ids = @grid.transform_values { |scope| Concierge::ChatResolver.call(scope).id }
 
+      assert_equal offline, chat_ids, "a cell's offline thread was abandoned when the key came back"
       assert_equal 4, chat_ids.values.uniq.size, "two cells were handed the same Chat"
       assert_equal 4, Concierge::Conversation.count
       @grid.each do |(agent_slug, account), scope|

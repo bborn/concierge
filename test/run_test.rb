@@ -84,7 +84,13 @@ module Concierge
 
       assert_equal "failed", run.status
       assert_equal "RubyLLM::ConfigurationError", run.error_class
-      assert_nil run.chat_id
+
+      # The conversation was opened before the turn was attempted, and survives
+      # the failure — a host that later sets its key continues this thread rather
+      # than starting a new one. Only the *turn* failed.
+      assert_equal Concierge::Conversation.find_by_scope(Concierge::Scope.coerce(@subject)).chat_id,
+                   run.chat_id
+      assert_nil run.message_id, "a failed turn recorded a reply it never got"
     end
 
     test "a tool call during the run mutates only this subject's data" do

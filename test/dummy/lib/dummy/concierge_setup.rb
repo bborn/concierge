@@ -30,9 +30,15 @@ module Dummy
       # Without an API key there is nothing to talk to, so fall back to a
       # scripted reply. This keeps the dummy app usable offline; set
       # ANTHROPIC_API_KEY to drive a real model over the same prompt instead.
+      #
+      # The stand-in is handed the host Chat the engine resolved, and writes both
+      # halves of the turn into it. A host's chat_factory owns its own persistence
+      # semantics, and this one persists — so the offline demo has a real
+      # transcript to show on every screen that reads the host's chat tables,
+      # rather than only the stand-ins the seeds insert by hand.
       return if ENV["ANTHROPIC_API_KEY"]
 
-      c.chat_factory = ->(model:, chat_record: nil) { Dummy::ScriptedChat.new }
+      c.chat_factory = ->(model:, chat_record: nil) { Dummy::ScriptedChat.new(chat_record) }
     end
 
     def account(c)
