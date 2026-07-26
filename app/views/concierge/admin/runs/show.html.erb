@@ -132,9 +132,10 @@
       <% case @run.reply_unavailable_reason %>
       <% when :no_host_chat %>
         No host chat was recorded for this run, so there is no message to read.
-        The engine had no provider credentials at the time, or the host's
-        <code>chat_factory</code> does not persist conversations — either way this
-        turn's words were never written down anywhere Concierge can reach.
+        The engine opens a conversation for every run now, with or without
+        provider credentials — so this is a run recorded before it did, or one
+        whose host keeps no chat model at all. Either way this turn's words were
+        never written down anywhere Concierge can reach.
       <% when :not_persisted %>
         This run used host chat #<%= @run.chat_id %>, but no assistant message was
         persisted for the turn, so there is nothing to read back.

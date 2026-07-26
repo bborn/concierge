@@ -17,7 +17,7 @@ require "securerandom"
   Concierge::Handoff, Concierge::OutreachPreference, Concierge::Conversation,
   Concierge::AgentProposal, Concierge::BudgetLedger, Concierge::AgentRuleRevision,
   Concierge::AgentRule, Concierge::AgentRun,
-  Message, Chat, InboxMessage, ChangelogEntry, User, Tenant ].each(&:delete_all)
+  Message, Chat, Model, InboxMessage, ChangelogEntry, User, Tenant ].each(&:delete_all)
 
 acme = Tenant.create!(name: "Acme Corp", plan: "pro", last_active_at: 2.days.ago)
 dana = acme.users.create!(email: "dana@acme.test")
@@ -373,12 +373,20 @@ end
 # reply was ever persisted, and the run screen had a reply with nothing on the
 # other side of it to read the reply against.
 #
-# The host's chat rows are written directly rather than by running a turn: with
-# no API key there is no provider, so acts_as_chat cannot create a Chat at all
-# (see ChatResolver) and the offline demo has no persisted conversation of its
-# own. These stand in for the ones an online host would have written. No `models`
-# row is created on purpose — RubyLLM switches its whole model registry to the
-# database the moment that table is non-empty.
+# The host's chat rows here are written directly rather than by running a turn,
+# and now for one reason only: these two replies are hand-written to differ in the
+# single way the screen exists to make visible, which no scripted stand-in and no
+# live model would reliably reproduce on demand. Everything *else* about the
+# offline demo's transcript is real — drive the widget and the engine opens a
+# Conversation, the host's scripted chat writes both halves into it, and the run
+# links to them (task 5017). It used to be that a keyless host could not create a
+# host Chat at all, so these stand-ins were the only conversation in the database.
+#
+# No `models` row is created here on purpose: RubyLLM switches its whole model
+# registry to the database the moment that table is non-empty, and a seed run
+# should not decide that for the process. The first real turn writes one, which is
+# fine — every registry lookup in the engine falls back to RubyLLM's bundled data
+# when the host's table cannot answer (Concierge::ModelRegistry).
 demo_chat_id = Chat.insert_all(
   [ { created_at: Time.current, updated_at: Time.current } ]
 ).first["id"]

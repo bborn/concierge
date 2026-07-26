@@ -44,54 +44,100 @@ module Concierge
       end
     end
 
-    test "an uncredentialed provider yields no chat record and no conversation" do
-      without_provider_credentials do
-        assert_nil ChatResolver.call(@subject)
-      end
+    # Regression (task 5017): the answer to the paragraph above used to be "then
+    # no conversation at all", which left every host-transcript surface — the
+    # widget's tool-call strip, the run screen's question and reply — permanently
+    # empty on a keyless host. The engine now owns the resolution instead of the
+    # before_save, so the record is created and the credential is never consulted.
+    test "an uncredentialed provider still gets a persisted conversation" do
+      chat = without_provider_credentials { ChatResolver.call(@subject) }
 
-      assert_equal 0, Conversation.for_subject(@subject).count,
-                   "a conversation was recorded pointing at a Chat that was never created"
-    end
-
-    # The degrade is scoped to record creation, not to the config: the moment
-    # credentials appear, the same host persists conversations again.
-    test "credentials appearing later restore persistence" do
-      without_provider_credentials { ChatResolver.call(@subject) }
-
-      chat = ChatResolver.call(@subject)
-
-      assert chat.persisted?
+      assert chat.persisted?, "a keyless host was handed no host Chat"
+      assert_equal "claude-sonnet-4-5", chat.model_id
       assert_equal "anthropic", chat.provider
       assert_equal 1, Conversation.for_subject(@subject).count
     end
 
-    # Regression: the degrade above is only as good as the gate that fires it, and
-    # the gate asks ProviderCredentials, which answers through the model id. On a
-    # real Rails host (acts_as_model) RubyLLM prefers the host's `models` table
-    # the moment it has a row, and that table holds only the models the host has
-    # already talked to — so the gate's lookup started failing, "unknown model"
-    # was read as "credentials are fine", and the degrade stopped firing. This
-    # host has no key and a model its own table has never heard of; it must still
-    # degrade, and it must not raise RubyLLM::ModelNotFoundError out of a
-    # before_save on the way — which is exactly what it did.
+    # ...and it is a real conversation, not a husk: the host can write the turn
+    # into it, and read it back, with no provider anywhere in sight.
+    test "a conversation opened without credentials accepts and keeps messages" do
+      chat = without_provider_credentials do
+        ChatResolver.call(@subject).tap do |record|
+          record.add_message(role: :user, content: "what a keyless host asked")
+        end
+      end
+
+      assert_equal [ "what a keyless host asked" ], chat.reload.messages.pluck(:content)
+    end
+
+    # The point of owning the resolution is that acts_as_chat's before_save has
+    # nothing left to do — Models.resolve is the one call in it that builds a
+    # provider, and it must never be reached. Stated directly, because on a
+    # credentialed suite a regression to the string assignment would pass every
+    # other test in this file: the credential would simply cover for it.
+    test "creating the chat never reaches RubyLLM's own model resolution" do
+      registry = RubyLLM::Models.singleton_class
+      original = registry.instance_method(:resolve)
+      registry.define_method(:resolve) do |*, **|
+        raise "the before_save resolved the model, and built a provider doing it"
+      end
+
+      begin
+        assert ChatResolver.call(@subject).persisted?
+      ensure
+        registry.define_method(:resolve, original)
+      end
+    end
+
+    # Persistence no longer turns on credentials, so credentials coming back must
+    # not open a *second* conversation for the same subject either.
+    test "credentials appearing later continue the same conversation" do
+      offline = without_provider_credentials { ChatResolver.call(@subject) }
+
+      chat = ChatResolver.call(@subject)
+
+      assert_equal offline.id, chat.id
+      assert_equal "anthropic", chat.provider
+      assert_equal 1, Conversation.for_subject(@subject).count
+    end
+
+    # Regression: on a real Rails host (acts_as_model) RubyLLM prefers the host's
+    # `models` table the moment it has a row, and that table holds only the models
+    # the host has already talked to — so a lookup for anything else raises
+    # ModelNotFoundError. That used to surface out of a before_save; now the
+    # lookup is ours, so it is ours to get right, and a partial registry must fall
+    # back to RubyLLM's bundled data rather than failing the resolution.
     #
     # default_provider is nil deliberately. It is a documented, supported setting
     # ("leave nil to let RubyLLM resolve the model normally"), and it is what puts
-    # the whole gate on the model lookup: a host that names its provider is asked
-    # about that provider directly and never reached this. So the bug was invisible
-    # to every test in this suite, all of which inherit the dummy's :anthropic.
-    test "the degrade still fires when the host's registry is partial" do
+    # the whole resolution on the model lookup: a host that names its provider
+    # assumes the model exists and never reaches the registry at all. So this stays
+    # invisible to every other test in this suite, all of which inherit the dummy's
+    # :anthropic.
+    test "a partial host registry still resolves, from RubyLLM's bundled data" do
       Concierge.config.default_provider = nil
 
       with_partial_model_registry("gpt-4.1-nano" => "openai") do
         without_provider_credentials do
-          assert_nothing_raised { ChatResolver.call(@subject) }
-          assert_nil ChatResolver.call(@subject)
+          chat = assert_nothing_raised { ChatResolver.call(@subject) }
+
+          assert chat.persisted?
+          assert_equal "anthropic", chat.provider,
+                       "the bundled registry knows this model's provider; the host's table does not"
         end
       end
 
-      assert_equal 0, Conversation.for_subject(@subject).count,
-                   "a conversation was recorded pointing at a Chat that was never created"
+      assert_equal 1, Conversation.for_subject(@subject).count
+    end
+
+    # A model genuinely nobody has heard of is still an error, and RubyLLM's own
+    # is the one that names it. Run turns it into a failed Result.
+    test "a model neither registry knows raises RubyLLM's own error" do
+      Concierge.config.default_provider = nil
+
+      assert_raises(RubyLLM::ModelNotFoundError) do
+        ChatResolver.call(@subject, model: "no-such-model-anywhere")
+      end
     end
 
     # An existing conversation predates the credentials going away, so it still

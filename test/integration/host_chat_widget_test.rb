@@ -136,6 +136,39 @@ class HostChatWidgetTest < ActionDispatch::IntegrationTest
     assert_empty response.parsed_body["tool_calls"]
   end
 
+  # The demo, keyless, through the endpoint a browser actually posts to.
+  #
+  # ConciergeSetup installs its scripted stand-in only when ANTHROPIC_API_KEY is
+  # unset, and test_helper always sets one — so every other test in this file runs
+  # the host's config with FakeChat in place of it. That is deliberate (no test
+  # may reach a model) but it means the offline wiring the demo actually ships is
+  # exercised nowhere. Here it is, on purpose: no key, the host's own factory, and
+  # the assertion the whole of task 5017 is about — a keyless turn is written down
+  # where every transcript surface in the product reads from.
+  test "a keyless host's widget turn lands in this account's conversation" do
+    with_keyless_host do
+      sign_in_as @dana
+
+      post "/concierge/accounts/#{@acme.id}/chat",
+           params: { message: "how do I publish?", agent: "csm" }
+
+      assert_response :success
+      assert_includes response.parsed_body["reply"], "Changelog"
+    end
+
+    scope = csm_scope(@acme)
+    chat  = Concierge::Conversation.find_by_scope(scope)&.chat_record
+
+    assert chat, "a keyless widget turn opened no conversation"
+    assert_equal %w[user assistant], chat.messages.order(:id).map { |m| m.role.to_s }
+    assert_equal "how do I publish?", chat.messages.order(:id).first.content
+
+    run = Concierge::AgentRun.for_scope(scope).sole
+    assert_equal chat.id, run.chat_id
+    assert_nil run.prompt_unavailable_reason
+    assert_nil run.reply_unavailable_reason
+  end
+
   test "the widget hides the composer while a human holds the thread" do
     sign_in_as @dana
     Concierge::Handoff.seize!(csm_scope(@acme), operator: "support@acme.test")

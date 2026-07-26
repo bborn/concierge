@@ -12,9 +12,14 @@ module Concierge
   # in-process test green no matter what the engine did.
   #
   # So: boot the dummy host in a separate process with the variable actually
-  # removed from the environment, and check the two things a keyless host needs.
-  # It queries nothing, so it neither needs a seeded database nor contends with
-  # the suite's own SQLite file.
+  # removed from the environment, and check what a keyless host needs — including
+  # a whole turn, end to end, because "the engine persists a conversation without
+  # credentials" is exactly the kind of claim that a suite with a key in its
+  # environment can assert while being wrong.
+  #
+  # The turn runs against a throwaway in-memory database loaded from the dummy's
+  # own schema, so the child neither needs a seeded database nor contends with the
+  # suite's SQLite file.
   class OfflineBootTest < ActiveSupport::TestCase
     SCRIPT = <<~RUBY.freeze
       raise "ANTHROPIC_API_KEY leaked into the child process" if ENV["ANTHROPIC_API_KEY"]
@@ -33,10 +38,34 @@ module Concierge
       raise "keyless host was left with the live chat factory" if
         Concierge.config.chat_factory == Concierge::Configuration::DEFAULT_CHAT_FACTORY
 
+      # 4. Then the thing all of that is for. A genuinely keyless host runs a turn
+      #    and is left with a conversation, both halves of it written down, and a
+      #    provenance row pointing at each — the offline demo's transcript, on the
+      #    only path that can prove it without a key in the environment.
+      ActiveRecord::Base.establish_connection(adapter: "sqlite3", database: ":memory:")
+      ActiveRecord::Schema.verbose = false
+      load Rails.root.join("db/schema.rb").to_s
+
+      tenant  = Tenant.create!(name: "Keyless", plan: "pro")
+      subject = Concierge.config.account.find_subject(tenant.id)
+      scope   = Concierge::Scope.new(Concierge.config.agent(:csm), subject)
+      asked   = "how do I publish my first changelog?"
+      result  = Concierge::Run.reactive(scope, asked)
+
+      raise "the keyless run failed: \#{result.error.inspect}" unless result.ok?
+
+      run = result.run_record
+      raise "a keyless run recorded no host chat" unless run.chat_id
+      raise "the customer's question was not persisted (\#{run.prompt_unavailable_reason})" unless
+        run.prompt_text == asked
+      raise "the reply was not persisted (\#{run.reply_unavailable_reason})" if run.reply_text.to_s.empty?
+      raise "the conversation was not the one this scope owns" unless
+        Concierge::Conversation.find_by_scope(scope)&.chat_id == run.chat_id
+
       print "OFFLINE_BOOT_OK"
     RUBY
 
-    test "the dummy host boots and reports itself offline with no API key set" do
+    test "a keyless dummy host boots, reports itself offline, and keeps a transcript" do
       dummy = File.expand_path("dummy", __dir__)
       env   = { "ANTHROPIC_API_KEY" => nil, "OPENAI_API_KEY" => nil, "RAILS_ENV" => "test" }
 

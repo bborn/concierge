@@ -8,11 +8,27 @@ module Dummy
   # model to notice that Acme has never published a changelog, so the stand-in
   # notices instead. Setting ANTHROPIC_API_KEY replaces all of this with a real
   # model over the very same prompt.
+  #
+  # It also *writes the turn down*, into the host Chat the engine resolved for
+  # this (agent, account). That is the host's job, not the engine's — a host that
+  # supplies its own +chat_factory+ owns its own persistence semantics (see
+  # Concierge::PersistentChat) — and until the engine could create a host Chat
+  # without provider credentials there was nothing here to write into. Without it
+  # the demo has no transcript: the widget's tool-call strip, "what the customer
+  # asked" and "what the agent actually said" all read empty on every run the
+  # offline server actually produces, and the only conversations in the database
+  # are the stand-ins the seeds insert by hand.
+  #
+  # Online, RubyLLM writes both halves — the user row from +ChatMethods#ask+, the
+  # assistant row from the callbacks +to_llm+ installs. Nothing installs those on
+  # a double, so this writes both itself, in that order, for the same reason
+  # PersistentChat is careful about it: the thread is replayed from row order.
   class ScriptedChat
     Reply = Struct.new(:content, :tool_calls, :input_tokens, :output_tokens, keyword_init: true)
 
-    def initialize
+    def initialize(chat_record = nil)
       @instructions = +""
+      @record = chat_record
     end
 
     def with_instructions(text, replace: false)
@@ -26,15 +42,31 @@ module Dummy
     def with_tools(*)            = self
 
     def ask(prompt)
+      persist(role: :user, content: prompt.to_s)
+
       reply = Reply.new(
         content: answer_for(prompt.to_s), tool_calls: [],
         input_tokens: 320, output_tokens: 48
       )
+      persist(role: :assistant, content: reply.content)
+
       yield reply if block_given?
       reply
     end
 
     private
+
+    # Never fails the turn over the transcript. A demo host that cannot write to
+    # its own message store should still answer the customer; the log says what
+    # was lost.
+    def persist(role:, content:)
+      return unless @record.respond_to?(:add_message)
+
+      @record.add_message(role: role, content: content)
+    rescue StandardError => e
+      Rails.logger.warn("[dummy] scripted chat could not persist #{role}: #{e.class}: #{e.message}")
+      nil
+    end
 
     # Deliberately dumb keyword matching. It exists so a keyless demo shows the
     # loop working, not so it looks clever — and every branch is something the

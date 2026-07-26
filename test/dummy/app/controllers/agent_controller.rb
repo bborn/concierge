@@ -26,8 +26,10 @@ class AgentController < ApplicationController
   #
   # The chat endpoint answers with the final assistant message; a real model's
   # tool calls happen on the messages *before* that one and are persisted by
-  # acts_as_chat, so this is where the widget gets them from. Offline there are
-  # no persisted messages at all, and this correctly answers with none.
+  # acts_as_chat, so this is where the widget gets them from. A keyless host now
+  # has a conversation to read (task 5017) — the turn itself is there, both halves
+  # of it — but its scripted stand-in calls no tools, so this still answers with
+  # none offline. That is the honest answer: no tools were called.
   def activity
     render json: { tool_calls: recent_tool_calls }
   end
