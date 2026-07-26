@@ -588,6 +588,14 @@ The four deltas are already filed as backlog trackers referencing this design.
   become a cross-**(agent, account)** test: no query may escape *either*
   dimension. This is the load-bearing invariant of the whole phase — treat the
   test as a gate on task [1].
+- **The isolation surface is not only account-to-account.** The engine's
+  per-account endpoints sit on a second boundary: the customer and the staff
+  serving them. `config.authorize_subject` answers "is this account yours", which
+  a customer answers *yes* about their own; the handoff endpoints ask "are you
+  staff, and is this account in your book" and so take their own hook,
+  `config.authorize_operator`, which does **not** fall back to the first (task
+  5005). A hook that answers one question must never be read as answering
+  another — the same rule that keeps `authenticate_admin` separate from both.
 - **`agent_slug` as data later.** If agents ever become host-editable data (not
   code), the column decision (§10.1) revisits as an `agents` table + FK. Note the
   seam; don't build it now.

@@ -52,14 +52,25 @@ module Concierge
       end
     end
 
-    # The engine's per-account endpoints fail closed without
-    # +config.authorize_subject+ (see Concierge::ScopedEndpoint), and that
-    # default is deliberately *not* part of the baseline above: a test that wants
-    # to reach the chat or handoff endpoint has to say who it is, and a test that
-    # never calls this proves the endpoints stay shut. This is the "the host said
-    # yes" stand-in for the tests whose subject is the turn, not the gate.
+    # The engine's per-account endpoints fail closed without a host
+    # authorization hook (see Concierge::ScopedEndpoint), and those defaults are
+    # deliberately *not* part of the baseline above: a test that wants to reach
+    # one has to say who it is, and a test that never calls these proves the
+    # endpoints stay shut. These are the "the host said yes" stand-ins for the
+    # tests whose subject is the turn, not the gate.
+    #
+    # Two of them, because there are two questions and neither answers the other.
+    # +authorize_all_subjects!+ opens the chat endpoint — "is this account yours".
+    # It does *not* open the handoff endpoints, which ask "are you staff": a
+    # customer passes the first about their own account, and sharing one hook let
+    # them seize their own thread and message themselves as support. A test that
+    # drives an operator endpoint has to say so out loud.
     def self.authorize_all_subjects!
       Concierge.configure { |c| c.authorize_subject = ->(_controller, _scope) { true } }
+    end
+
+    def self.authorize_all_operators!
+      Concierge.configure { |c| c.authorize_operator = ->(_controller, _scope) { true } }
     end
 
     # The pluralized form of the same host: two business functions over the same

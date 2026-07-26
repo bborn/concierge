@@ -11,6 +11,10 @@ module Concierge
   class ChatsController < ApplicationController
     include ScopedEndpoint
 
+    # The customer's question: is this account yours. Staff seizing the same
+    # thread is a different one — see HandoffsController.
+    authorize_with :subject
+
     def create
       result = Concierge::Run.reactive(scope, params[:message].to_s)
 

@@ -1,0 +1,40 @@
+Raw curl session against a running dummy host on :3117, ANTHROPIC_API_KEY unset.
+Real session cookies, real CSRF tokens. Acme is tenant 4, Globex is tenant 5.
+
+################ BEFORE: engine app/controllers at origin/main (one shared hook) ################
+=== signed in as Dana at Acme (tenant 4) — a customer ===
+her own account's chat                               200  {"reply":"You haven't published a changelog entry yet, and that's the one thing that makes the rest of Acme click. You a
+SEIZE her own operator thread                        201   201 
+MESSAGE her own account as support                   200   200 
+RELEASE her own operator thread                      204   204 
+seize Globex's operator thread                       403   403 
+her own account's handoff, as :billing               201   201 
+
+=== signed in as Support — staff, no customer session ===
+the chat endpoint (asks 'is this account yours')     403  {"error":"not authorized for this account"} 403 
+seize Acme's operator thread                         403   403 
+message Acme as support                              403   403 
+release Acme's operator thread                       403   403 
+an account id that does not exist                    403   403 
+
+=== signed out entirely ===
+seize Acme's operator thread                         403   403 
+
+################ AFTER: authorize_subject + authorize_operator ################
+=== signed in as Dana at Acme (tenant 4) — a customer ===
+her own account's chat                               200  {"reply":"You haven't published a changelog entry yet, and that's the one thing that makes the rest of Acme click. You a
+SEIZE her own operator thread                        403   403 
+MESSAGE her own account as support                   403   403 
+RELEASE her own operator thread                      403   403 
+seize Globex's operator thread                       403   403 
+her own account's handoff, as :billing               403   403 
+
+=== signed in as Support — staff, no customer session ===
+the chat endpoint (asks 'is this account yours')     403  {"error":"not authorized for this account"} 403 
+seize Acme's operator thread                         201   201 
+message Acme as support                              200   200 
+release Acme's operator thread                       204   204 
+an account id that does not exist                    403   403 
+
+=== signed out entirely ===
+seize Acme's operator thread                         403   403 

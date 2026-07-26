@@ -80,40 +80,68 @@ Concierge.configure do |config|
   config.weekly_review_enabled = true
   config.budget = { per_tenant: 200_000, global: 5_000_000 }
 
-  # Who may act as an account on the engine's own endpoints. Required — see below.
+  # Who may act as an account, and who may act on it as staff. Both required to
+  # use the endpoints they guard — see below.
   config.authorize_subject = lambda do |controller, scope|
     user = User.find_by(id: controller.session[:user_id])
     user && user.account_id.to_s == scope.subject.id.to_s
   end
+
+  config.authorize_operator = lambda do |controller, scope|
+    staff = Staff.find_by(id: controller.session[:staff_id])
+    staff && staff.covers?(scope.subject.id)
+  end
 end
 ```
 
-### Who may act as an account
+### Who may act as an account, and who may act on it
 
-Two engine surfaces take an account out of the URL: the chat endpoint
-(`POST /concierge/accounts/:subject_id/chat`) and the operator handoff endpoints
-beside it. The engine cannot know your app's session shape, so it asks — and,
-like the admin, **fails closed**: without `config.authorize_subject` every
-request to those endpoints is refused with a `403` and a log line saying so.
+Two engine surfaces take an account out of the URL, and they ask **two different
+questions**:
 
-The hook is handed the controller (read your own session off it — these are the
-*engine's* controllers, so there is no `current_user` on them unless you put one
-there) and the resolved `Scope`, so an answer can be per **(agent, account)**:
+| Endpoint | The question | The hook |
+|---|---|---|
+| `POST /concierge/accounts/:subject_id/chat` | is this account yours? | `config.authorize_subject` |
+| the handoff endpoints beside it | are you staff, and is this account in your book? | `config.authorize_operator` |
+
+The engine cannot know your app's session shape, so it asks — and, like the
+admin, **fails closed**: without the hook that guards it, every request to that
+endpoint is refused with a `403` and a log line saying which hook is missing.
+
+They are separate hooks because they are separate questions, and
+`authorize_operator` deliberately does **not** fall back to `authorize_subject`.
+The obvious tenant-match hook above is right for the chat endpoint and quietly
+wrong for the operator ones: a customer answers "is this account yours" *yes*
+about their own account, so one shared hook let them seize their own thread and
+message themselves as support — landing pinned, human-sourced memory that the
+next prompt weights ahead of the agent's own notes. A host that has not answered
+the staff question has not answered it, and inheriting an answer to a different
+one is how that hole opens.
+
+Both hooks are handed the controller (read your own session off it — these are
+the *engine's* controllers, so there is no `current_user` on them unless you put
+one there) and the resolved `Scope`, so an answer can be per **(agent, account)**:
 
 ```ruby
+# "This person may talk to the CSM but not to billing."
 config.authorize_subject = lambda do |controller, scope|
   user = User.find_by(id: controller.session[:user_id])
   next false unless user && user.account_id.to_s == scope.subject.id.to_s
 
-  scope.agent_slug != "billing" || user.support_staff?
+  scope.agent_slug != "billing"
+end
+
+# "...and only the billing team may take the billing thread."
+config.authorize_operator = lambda do |controller, scope|
+  staff = Staff.find_by(id: controller.session[:staff_id])
+  staff && staff.covers?(scope.subject.id) && staff.team?(scope.agent_slug)
 end
 ```
 
 An account that does not exist is refused exactly as an account that is not yours
 is, so the endpoint is not an id oracle. `/concierge/admin/*` keeps its own
-`config.authenticate_admin` — "are you staff" and "is this account yours" are
-different questions, and neither stands in for the other. The unsubscribe link is
-authorized by its token and needs neither.
+`config.authenticate_admin` — three questions now, and none of them stands in for
+another. The unsubscribe link is authorized by its token and needs none of them.
 
 ## More than one business function
 
@@ -408,7 +436,8 @@ sends in one message.
 Every tool and query is scoped to the current **(agent, account)** pair — a tool
 can never reach another account's data, nor another agent's notes about the same
 account. The engine's per-account HTTP endpoints ask the host who is calling
-(`config.authorize_subject`, above) and refuse until it says. Write tools are
+(`config.authorize_subject` for the customer's chat, `config.authorize_operator`
+for the staff handoff endpoints — above) and refuse until it says. Write tools are
 grant-gated. Prompt injection is mitigated by
 least-privilege grants, an audit log, and fast human takeover — and by the rule
 gate: nothing the model or a customer says can put a behavioral instruction into

@@ -7,13 +7,20 @@ module Concierge
   # is the default +:csm+ agent.
   #
   # These are the sharpest endpoints in the engine — seizing a thread speaks to a
-  # customer as your company — so they sit behind the same host authorization
-  # hook the chat endpoint does (+config.authorize_subject+), and refuse without
-  # one. A host whose operator console is staff-only checks for that in the hook:
-  # it is handed the controller, so +controller.request.path+ and its own session
-  # are both in reach.
+  # customer as your company, and what an operator sends is captured as pinned,
+  # human-sourced memory that outweighs the agent's own notes in the next prompt.
+  # So they ask their own question of the host, +config.authorize_operator+ ("are
+  # you staff, and is this account in your book"), and refuse without it.
+  #
+  # Not +config.authorize_subject+, which the chat endpoint asks: that one is "is
+  # this account yours", and a customer answers yes about their own account.
+  # Sharing it let a signed-in customer seize their own thread and message
+  # themselves as support. Two questions, two hooks, and the second does not
+  # inherit an answer to the first (see Concierge::ScopedEndpoint).
   class HandoffsController < ApplicationController
     include ScopedEndpoint
+
+    authorize_with :operator
 
     def create
       Handoff.seize!(scope, operator: params[:operator])

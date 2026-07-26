@@ -9,6 +9,8 @@ class SessionsController < ApplicationController
   end
 
   def create
+    return sign_in_operator if params[:operator].present?
+
     user = User.find_by(id: params[:user_id])
     return redirect_to(signin_path, alert: "Pick someone to sign in as.") unless user
 
@@ -20,5 +22,18 @@ class SessionsController < ApplicationController
   def destroy
     reset_session
     redirect_to signin_path, notice: "Signed out."
+  end
+
+  private
+
+  # The staff door. It sets no user_id, so an operator is signed in to nobody's
+  # account: the product pages still want a customer and send them back here.
+  # Their surfaces are the engine's — the admin console and the handoff
+  # endpoints, which ask `config.authorize_operator` rather than
+  # `config.authorize_subject`.
+  def sign_in_operator
+    reset_session
+    Operator.sign_in(session)
+    redirect_to concierge.admin_proposals_path, notice: "Signed in as #{Operator::EMAIL} (support)."
   end
 end

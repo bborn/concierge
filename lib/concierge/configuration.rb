@@ -133,9 +133,8 @@ module Concierge
     # fails closed rather than shipping an open dashboard).
     attr_accessor :authenticate_admin
 
-    # Callable(controller, scope) -> truthy to permit this requester to act as
-    # this (agent, account) pair on the engine's per-account endpoints: the chat
-    # endpoint and the operator handoff endpoints. Nil = deny, loudly (see
+    # Callable(controller, scope) -> truthy to permit this requester to act *as*
+    # this (agent, account) pair on the chat endpoint. Nil = deny, loudly (see
     # Concierge::ScopedEndpoint) — an endpoint that takes the account out of the
     # URL and answers with that account's memory, rules and snapshot cannot
     # default to open. The scope, rather than the bare subject, so a host can
@@ -145,7 +144,31 @@ module Concierge
     #     user = User.find_by(id: controller.session[:user_id])
     #     user && user.tenant_id.to_s == scope.subject.id.to_s
     #   end
+    #
+    # This is the *customer's* question — "is this account yours". It does not
+    # answer for the operator endpoints; see +authorize_operator+.
     attr_accessor :authorize_subject
+
+    # Callable(controller, scope) -> truthy to permit this requester to seize
+    # this (agent, account) thread, speak on it as a human, and release it. Nil =
+    # deny, loudly, exactly like +authorize_subject+ — and deliberately *not*
+    # falling back to it.
+    #
+    # A different question deserves its own seam. +authorize_subject+ asks "is
+    # this account yours", which a customer answers yes about their own; the
+    # operator endpoints ask "are you staff, and is this account in your book".
+    # Folding the second into the first meant the obvious tenant-match hook — the
+    # one in the example above — silently let a signed-in customer seize their
+    # own account's operator thread and message themselves as support, writing
+    # pinned, human-sourced memory into their own agent's head. Omission is the
+    # failure mode, so this fails closed rather than inheriting an answer to a
+    # question nobody asked.
+    #
+    #   config.authorize_operator = lambda do |controller, scope|
+    #     staff = Staff.find_by(id: controller.session[:staff_id])
+    #     staff && staff.covers?(scope.subject.id)
+    #   end
+    attr_accessor :authorize_operator
 
     # Callable(controller) -> the identity of the human driving the admin, used as
     # the approver when a rule is activated. The engine cannot know the host's
