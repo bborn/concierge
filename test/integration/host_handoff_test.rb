@@ -28,11 +28,18 @@ class HostHandoffTest < ActionDispatch::IntegrationTest
     assert_select ".kit__notice", text: /A person has this thread/
   end
 
-  test "closing the handoff gives the thread back" do
+  test "closing the handoff gives the thread back, and records who did" do
     post handoff_path
     delete handoff_path
 
     assert_nil Concierge::Handoff.active_for(csm_scope(@acme))
+
+    # The host's own button, on the customer's page: support opened the takeover,
+    # Dana ended it. Two different names on one cycle is the case the engine could
+    # not record at all before.
+    handoff = Concierge::Handoff.for_scope(csm_scope(@acme)).sole
+    assert_equal "support@acme.test", handoff.operator
+    assert_equal @dana.email, handoff.released_by
 
     get account_path
     assert_select ".pill--good", text: "on"

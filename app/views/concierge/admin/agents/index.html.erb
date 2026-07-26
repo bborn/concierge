@@ -79,6 +79,25 @@
         </td>
       </tr>
       <tr>
+        <th>Takeovers</th>
+        <td>
+          <% if @takeovers.fetch(agent.memory_namespace, 0).positive? %>
+            <strong><%= pluralize(@takeovers.fetch(agent.memory_namespace, 0), "thread") %>
+            held by a human</strong> — proactive sends are suppressed on
+            <%= @takeovers.fetch(agent.memory_namespace, 0) == 1 ? "it" : "them" %>
+          <% else %>
+            no thread is held by a human
+          <% end %>
+          <% if (handback = @last_handbacks[agent.memory_namespace]) %>
+            <br>last handback: <code><%= handback.subject_type %> <%= handback.subject_id %></code>
+            was taken over by
+            <strong><%= handback.operator %></strong> and handed back by
+            <strong><%= handback.released_by || "somebody the engine did not record" %></strong>
+            <%= "#{time_ago_in_words(handback.released_at)} ago" if handback.released_at %>
+          <% end %>
+        </td>
+      </tr>
+      <tr>
         <th>Memory namespace</th>
         <td><code><%= agent.memory_namespace %></code></td>
       </tr>

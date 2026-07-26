@@ -14,8 +14,12 @@ class HandoffsController < ApplicationController
                   notice: "A person from our team has this conversation. #{kit} has stepped back."
   end
 
+  # This button is on the *customer's* page, so the seat that ends the takeover
+  # here is Dana, not the support address the takeover was opened under — which
+  # is the whole reason the engine records the handback separately. A host with a
+  # staff console would pass that operator's identity instead.
   def destroy
-    Concierge::Handoff.active_for(concierge_scope(:csm))&.release!
+    Concierge::Handoff.active_for(concierge_scope(:csm))&.release!(by: current_user.email)
     redirect_back fallback_location: account_path,
                   notice: "#{kit} has the thread again."
   end

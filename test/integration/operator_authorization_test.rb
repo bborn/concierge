@@ -138,6 +138,8 @@ class OperatorAuthorizationTest < ActionDispatch::IntegrationTest
     delete "/concierge/accounts/#{@tenant.id}/handoff"
     assert_response :no_content
     assert_nil Concierge::Handoff.active_for(@subject)
+    assert_equal "sam@acme.test", Concierge::Handoff.sole.released_by,
+                 "the handback recorded when but not who"
   end
 
   test "an account that does not exist is refused the same way an unstaffed one is" do
@@ -165,6 +167,26 @@ class OperatorAuthorizationTest < ActionDispatch::IntegrationTest
     assert_response :created
     assert_equal "sam@acme.test", Concierge::Handoff.active_for(@subject).operator,
                  "the caller named the operator of record"
+  end
+
+  test "who handed the thread back is the host's answer too, and need not be who took it" do
+    # The half of the takeover that was recorded only as a timestamp. Releasing is
+    # what re-enables this pair's autonomous proactive sends, so the name on it
+    # matters for the same reason the seizing name does — and it comes off the
+    # session the gate vouched for, not off the request.
+    Concierge::Test.authorize_all_operators!
+    Concierge::Test.name_all_operators!("sam@acme.test")
+    post "/concierge/accounts/#{@tenant.id}/handoff"
+    assert_response :created
+
+    Concierge::Test.name_all_operators!("bill@acme.test")
+    delete "/concierge/accounts/#{@tenant.id}/handoff", params: { operator: "ceo@acme.test" }
+
+    assert_response :no_content
+    handoff = Concierge::Handoff.sole
+    assert_equal "sam@acme.test",  handoff.operator
+    assert_equal "bill@acme.test", handoff.released_by,
+                 "the caller named who handed the account back to an autonomous agent"
   end
 
   test "the identity hook is handed the controller and the resolved scope" do
@@ -284,7 +306,7 @@ class OperatorAuthorizationTest < ActionDispatch::IntegrationTest
     assert_response :created
     assert_equal "bill@acme.test", Concierge::Handoff.active_for(@subject).operator
 
-    Concierge::Handoff.active_for(@subject).release!
+    Concierge::Handoff.active_for(@subject).release!(by: "bill@acme.test")
 
     post "/concierge/accounts/#{@tenant.id}/handoff", params: { operator: "ceo@acme.test" }
     assert_response :forbidden

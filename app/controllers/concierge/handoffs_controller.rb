@@ -22,7 +22,9 @@ module Concierge
   # to be +params[:operator]+: the caller named themselves, so a staff member who
   # had passed the gate could seize a thread as a colleague or as the CEO, and
   # the customer would be told that name. The operator of record is now the
-  # host's answer, and the request parameter is not read at all.
+  # host's answer, and the request parameter is not read at all. The handback is
+  # recorded from that same answer: who gave an account back to an autonomous
+  # agent is not the caller's to say either.
   class HandoffsController < ApplicationController
     include ScopedEndpoint
 
@@ -41,8 +43,11 @@ module Concierge
       head :ok
     end
 
+    # Handing the thread back is the act that lets the agent reach out on its own
+    # again, so it records who did it — from the same host answer, not from the
+    # request, and not by assuming it was whoever seized it.
     def destroy
-      Handoff.active_for(scope)&.release!
+      Handoff.active_for(scope)&.release!(by: operator)
       head :no_content
     end
   end
