@@ -65,12 +65,49 @@
     it should never have seen.</p>
 <% end %>
 
+<h2>
+  <%= @run.trigger == "proactive" ? "What set the agent off" : "What the customer asked" %>
+</h2>
+
+<p>
+  <%= if @run.trigger == "proactive"
+        "There was no inbound question: this turn was opened by the engine, and this " \
+        "is the instruction it opened with."
+      else
+        "The other half of the turn. A reply read on its own is thin evidence — the " \
+        "same sentence is unremarkable or alarming depending on what it was answering."
+      end %>
+</p>
+
+<% if (prompt = @run.prompt_text) %>
+  <%# Escaped as carefully as the reply below. A customer can type markup too. %>
+  <pre class="concierge-reply"><%= prompt %></pre>
+<% else %>
+  <p>
+    <em>
+      <% case @run.prompt_unavailable_reason %>
+      <% when :no_host_chat %>
+        No host chat was recorded for this run, so there is no question to read.
+      <% when :not_persisted %>
+        No customer message was persisted for this turn, so there is nothing to read
+        back. Runs recorded before the engine wrote the customer's turn down all
+        read this way, as does any host whose <code>chat_factory</code> keeps no
+        messages.
+      <% else %>
+        The host has pruned this message (chat #<%= @run.chat_id %>,
+        message #<%= @run.prompt_message_id %>). Retention of customer conversations
+        is the host's call, not the engine's.
+      <% end %>
+    </em>
+  </p>
+<% end %>
+
 <h2>What the agent actually said</h2>
 
 <p>
-  The check the engine cannot perform. Read this against the claim above: a rule
-  cited and followed and a rule cited and contradicted are indistinguishable on
-  every other line of this page.
+  The check the engine cannot perform. Read this against the claim above, and
+  against the question above that: a rule cited and followed and a rule cited and
+  contradicted are indistinguishable on every other line of this page.
 </p>
 
 <% if (reply = @run.reply_text) %>

@@ -170,7 +170,8 @@ module Concierge
         output_tokens:    token(reply, :output_tokens),
         rule_ids_applied: cited.rule_ids,
         unknown_rule_ids: unknown,
-        message_id:       persisted_reply_id
+        message_id:       persisted_reply_id,
+        prompt_message_id: persisted_prompt_id
       )
 
       Result.new(
@@ -201,7 +202,20 @@ module Concierge
     # operator at the previous turn's reply would be worse than pointing them at
     # nothing: they would spot-check the wrong words believing they were these.
     def persisted_reply_id
-      latest = host_messages&.where(role: "assistant")&.maximum(:id)
+      newest_message_this_turn(role: "assistant")
+    end
+
+    # ...and the turn it answered. A reply read alone is thin evidence: the same
+    # sentence is compliant or catastrophic depending on what was asked, so an
+    # operator spot-checking a cited rule needs both halves. Watermarked exactly
+    # like the reply, so a host whose factory persists nothing links to nothing
+    # rather than to the previous turn's question.
+    def persisted_prompt_id
+      newest_message_this_turn(role: "user")
+    end
+
+    def newest_message_this_turn(role:)
+      latest = host_messages&.where(role: role)&.maximum(:id)
       return unless latest
       return if @message_watermark && latest <= @message_watermark
 
@@ -234,7 +248,7 @@ module Concierge
     # managed to record it, and swallowing the reply would be the worse outcome.
     def record_provenance(status:, input_tokens: nil, output_tokens: nil,
                           rule_ids_applied: [], unknown_rule_ids: [], error_class: nil,
-                          message_id: nil)
+                          message_id: nil, prompt_message_id: nil)
       AgentRun.create!(
         **@scope.key,
         trigger:          @trigger[:type].to_s,
@@ -249,7 +263,8 @@ module Concierge
         unknown_rule_ids: unknown_rule_ids,
         error_class:      error_class,
         chat_id:          @chat_id,
-        message_id:       message_id
+        message_id:       message_id,
+        prompt_message_id: prompt_message_id
       )
     rescue StandardError => e
       Concierge.logger&.warn("[concierge] could not record run provenance: #{e.class}: #{e.message}")

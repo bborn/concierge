@@ -305,9 +305,14 @@ module Concierge
 
     # Default chat factory: prefer resuming the persisted conversation (RubyLLM's
     # +acts_as_chat+ gives records a +to_llm+), else a fresh in-memory chat.
+    #
+    # The resumed chat is wrapped in a PersistentChat, which writes the customer's
+    # turn to the host's own message store — the half of the transcript +to_llm+
+    # alone drops on the floor. See PersistentChat for why the system prompt
+    # deliberately does *not* go there with it.
     DEFAULT_CHAT_FACTORY = lambda do |model:, chat_record: nil|
       if chat_record.respond_to?(:to_llm)
-        chat_record.to_llm
+        PersistentChat.new(chat_record.to_llm, chat_record)
       else
         RubyLLM.chat(model: model)
       end
