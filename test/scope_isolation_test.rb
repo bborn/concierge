@@ -851,6 +851,53 @@ module Concierge
       assert_equal :pruned, mine.reply_unavailable_reason
     end
 
+    # A host that lets a customer answer an in-app message has to decide *which
+    # agent* is being answered, and the only trustworthy answer is the delivery
+    # row the message went out under. That makes `ChannelDelivery.for_scope` load
+    # bearing in a new way: if a delivery were resolvable from a neighbouring
+    # cell, a reply to the billing agent could be routed to the CSM — a different
+    # persona, a different tool scope, a different authority envelope — with
+    # nothing in the request looking wrong.
+    test "a delivery is resolvable only from the cell that sent it" do
+      sent = @grid.to_h do |key, scope|
+        [ key, Concierge::Governance.new.record!(scope, channel: "in_app", kind: "outreach") ]
+      end
+
+      @grid.each do |mine, scope|
+        rows = Concierge::ChannelDelivery.for_scope(scope).where(channel: "in_app")
+
+        assert_equal [ sent[mine].id ], rows.pluck(:id), "#{mine.inspect} saw a neighbour's delivery"
+
+        sent.except(mine).each do |theirs, delivery|
+          assert_nil rows.find_by(id: delivery.id),
+                     "#{mine.inspect} resolved #{theirs.inspect}'s delivery, and with it its agent"
+        end
+      end
+    end
+
+    # ...and the turn a reply produces stays where the delivery said it belonged.
+    # Answering the billing agent must not leave a run, a conversation or a word
+    # of the customer's question in the CSM's cell, or in another account's.
+    test "a reply composed from one cell's outreach runs in that cell and no other" do
+      Concierge.config.chat_factory = persisting_chat_factory
+
+      @grid.each do |(agent_slug, account), scope|
+        Concierge::Governance.new.record!(scope, channel: "in_app", kind: "outreach")
+
+        with_model_reply("answer for #{agent_slug}/#{account}") do
+          Concierge::Run.reactive(scope, "replying to #{agent_slug}/#{account}'s message")
+        end
+      end
+
+      @grid.each do |(agent_slug, account), scope|
+        run = Concierge::AgentRun.for_scope(scope).sole
+
+        assert_equal "replying to #{agent_slug}/#{account}'s message", run.prompt_text
+        assert_equal "answer for #{agent_slug}/#{account}", run.reply_text
+        assert_equal Concierge::Conversation.find_by_scope(scope).chat_id, run.chat_id
+      end
+    end
+
     test "outreach preferences deliberately have no agent dimension" do
       # One customer, one answer to "how often may we contact you" (§10.1).
       Concierge::OutreachPreference.for(@grid[[ :csm, :acme ]]).update!(frequency: "less")

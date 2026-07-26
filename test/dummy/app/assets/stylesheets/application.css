@@ -139,6 +139,7 @@ p { margin: 0 0 1em; }
 .page { max-width: 940px; margin: 0 auto; padding: 28px 20px 140px; }
 .page__head { display: flex; align-items: flex-start; gap: 16px; margin-bottom: 20px; }
 .page__head > div:first-child { margin-right: auto; }
+.page__head .btn { white-space: nowrap; }
 .lede { color: var(--text-dim); margin: 0; }
 
 .card {
@@ -285,6 +286,14 @@ input:focus, textarea:focus, select:focus { outline: 2px solid var(--accent); ou
 .msg__head { display: flex; align-items: baseline; gap: 8px; margin-bottom: 3px; flex-wrap: wrap; }
 .msg__who { font-weight: 600; }
 .msg__text { white-space: pre-wrap; }
+
+/* Answering, and the answered exchange it turns into. */
+.msg__reply { margin-top: 10px; display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.msg__composer { display: flex; gap: 8px; flex: 1 1 300px; }
+.msg__composer input[type="text"] { flex: 1; min-width: 0; }
+.msg__thread { margin-top: 10px; display: flex; flex-direction: column; gap: 8px; align-items: flex-start; }
+.msg__thread .bubble--user { align-self: flex-start; }
+.msg__replied { font-size: 12px; margin: 0; }
 
 /* --- chat widget -------------------------------------------------------- */
 

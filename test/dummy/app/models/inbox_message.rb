@@ -34,4 +34,18 @@ class InboxMessage < ApplicationRecord
   def mark_read!
     update!(read_at: Time.current) unless read?
   end
+
+  def replied? = replied_at.present?
+
+  # One exchange, written down in one place. Replying *is* reading — a customer
+  # who answered a question has plainly seen it, and making them clear the "new"
+  # badge afterwards is the product asking for an acknowledgement it already has.
+  #
+  # `run_id` is Concierge::AgentRun's id for the turn: which agent answered, what
+  # it was told, which rules were in force. The words live here (host retention);
+  # the provenance stays the engine's.
+  def record_reply!(body:, agent_reply:, run_id: nil, at: Time.current)
+    update!(reply_body: body, agent_reply: agent_reply, reply_run_id: run_id,
+            replied_at: at, read_at: read_at || at)
+  end
 end
