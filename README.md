@@ -179,7 +179,20 @@ end
 ```
 
 The same identity authors any correction the takeover captures, so a rule drafted
-from what an operator said carries who said it.
+from what an operator said carries who said it — and it is what the handback is
+recorded under. `concierge_handoffs` keeps `operator`/`seized_at` and
+`released_by`/`released_at`, because handing the thread back is the act that
+re-enables autonomous proactive sends for that (agent, account) and is routinely
+a different person's decision. A host calling the model directly answers too:
+
+```ruby
+Concierge::Handoff.active_for(scope)&.release!(by: current_staff.email)
+```
+
+`by:` is required for the same reason `seize!`'s `operator:` is — a handback
+nobody is named for is an audit trail with a hole in it, and each seize/release
+cycle is its own row, so a thread taken and given back repeatedly keeps every
+pair.
 
 If one console of yours genuinely drives several operators, let the request name
 them — but say so yourself, having first established that the console may:
@@ -359,6 +372,8 @@ proactive sends are suppressed and the operator's messages are captured as
 high-confidence memory that steers future runs — and, when they read as an
 instruction, as a proposed rule for a human to approve (see above). Takeover is
 per (agent, account), so holding the disputes thread does not silence the CSM.
+Both ends are attributable: who seized the thread and who handed it back are
+recorded separately, and `/concierge/admin/agents` names both.
 
 Per-agent authority is the general form (see `authority` above). The older
 global `config.draft_and_review = true` still works and still only *tightens*:

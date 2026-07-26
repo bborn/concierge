@@ -188,6 +188,13 @@ Concierge::OutreachPreference.create!(**subject_for(initech).key, opted_out: tru
 
 Concierge::Handoff.seize!(scope_for(:csm, globex), operator: "bruno@acme.test")
 
+# ...and a finished one on Initech, because both ends of a takeover are recorded:
+# support took the thread, the customer decided they were done and handed it back,
+# and handing it back is what lets the agent reach out on its own again. Two names
+# on one cycle — see /concierge/admin/agents.
+Concierge::Handoff.seize!(scope_for(:csm, initech), operator: "support@acme.test")
+                  .release!(by: "peter@initech.test")
+
 # --- Rules: the human-gated behavioral layer (design §10.2) -------------------
 # Memory is what the agent knows about a relationship. A *rule* is a generalized,
 # versioned instruction about how it behaves — and it only goes into force when a

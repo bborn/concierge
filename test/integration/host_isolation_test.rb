@@ -244,6 +244,33 @@ class HostIsolationTest < ActionDispatch::IntegrationTest
     assert_not_includes response.body, "ceo@acme.test"
   end
 
+  test "an operator cannot hand a thread back as somebody else, or across a boundary" do
+    # The same forgery at the other end of the takeover, and the reason it is
+    # worth closing: handing the thread back is what lets the agent start
+    # reaching out to this customer on its own again. Support may do it; Support
+    # may not do it under the CEO's name, and may not reach past this pair while
+    # doing it.
+    sign_in_as_operator
+
+    post "/concierge/accounts/#{@acme.id}/handoff"
+    assert_response :created
+
+    delete "/concierge/accounts/#{@acme.id}/handoff", params: { operator: "ceo@acme.test" }
+    assert_response :no_content
+
+    handoff = Concierge::Handoff.for_scope(csm_scope(@acme)).sole
+    assert_equal Operator::EMAIL, handoff.released_by,
+                 "an operator named somebody else as the person who handed the account back"
+    assert_not_equal "ceo@acme.test", handoff.released_by
+
+    # ...and Globex's takeover, opened in setup, is untouched by any of it.
+    globex = Concierge::Handoff.active_for(csm_scope(@globex))
+    assert globex, "releasing Acme's thread released another account's"
+    assert_nil globex.released_by
+    assert_nil Concierge::Handoff.active_for(billing_scope(@acme)),
+               "the billing thread was never taken over"
+  end
+
   test "an operator cannot author another operator's correction either" do
     # The same forgery one door along: what an operator sends is captured as
     # pinned human memory and may be generalized into a proposed rule, which

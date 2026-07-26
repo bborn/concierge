@@ -63,6 +63,29 @@ class AdminTest < ActionDispatch::IntegrationTest
     assert_includes response.body, Concierge::Scope::SHARED
   end
 
+  test "the agents screen names both ends of the last takeover" do
+    # The audit surface for the handback. It is not on the customer's page on
+    # purpose: that line answers "who is speaking for us right now", and after a
+    # handback nobody is. Staff are who needs to know the account was handed back
+    # to an autonomous agent, and by whom.
+    Concierge.config.authenticate_admin = ->(_c) { true }
+    Concierge::Test.configure_agents!
+    subject = Concierge.config.account.build(@tenant)
+    scope   = Concierge::Scope.new(Concierge.config.agent(:csm), subject)
+
+    Concierge::Handoff.seize!(scope, operator: "support@acme.test")
+    get "/concierge/admin/agents"
+    assert_includes response.body, "held by a human"
+
+    Concierge::Handoff.active_for(scope).release!(by: "dana@acme.test")
+    get "/concierge/admin/agents"
+
+    assert_response :success
+    assert_includes response.body, "last handback"
+    assert_includes response.body, "support@acme.test"
+    assert_includes response.body, "dana@acme.test"
+  end
+
   test "the agents screen shows an un-pluralized host as the implicit csm agent" do
     Concierge.config.authenticate_admin = ->(_c) { true }
 

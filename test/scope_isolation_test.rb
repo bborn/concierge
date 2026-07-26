@@ -157,6 +157,28 @@ module Concierge
       end
     end
 
+    test "a handback ends one cell's takeover and attributes it to that cell only" do
+      # Releasing re-enables autonomous proactive sends for the pair it names, so
+      # it has to stop at that pair in both dimensions — and the name on it has to
+      # land on that row and no other.
+      @grid.each_value { |scope| Concierge::Handoff.seize!(scope, operator: "sam") }
+
+      Concierge::Handoff.active_for(@grid[[ :csm, :acme ]]).release!(by: "dana@acme.test")
+
+      @grid.each do |(agent_slug, account), scope|
+        handoff = Concierge::Handoff.for_scope(scope).sole
+
+        if [ agent_slug, account ] == [ :csm, :acme ]
+          assert handoff.released?, "the released cell is still holding the thread"
+          assert_equal "dana@acme.test", handoff.released_by
+        else
+          assert handoff.active?, "#{agent_slug}/#{account} lost its takeover to another cell's handback"
+          assert_nil handoff.released_by,
+                     "#{agent_slug}/#{account} was attributed another cell's handback"
+        end
+      end
+    end
+
     test "every cell's proposals are its own, and nothing else's" do
       @grid.each do |(agent_slug, account), scope|
         Concierge::AgentProposal.create!(
