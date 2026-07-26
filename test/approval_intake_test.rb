@@ -155,6 +155,50 @@ module Concierge
       assert proposal.reload.execution_retry_queued?
     end
 
+    test "retrying refuses every row that has no approved action to re-attempt" do
+      # Retry was the one transition here that asserted only who the actor was, so
+      # it wrote to whatever row it was handed. Every state below is a row nobody
+      # can perform, and the refusal has to say so in the shape record_execution's
+      # does — an operator reading it has to learn *why*, not just that it stopped.
+      proposal = failed_execution
+
+      %w[proposed rejected expired executed].each do |state|
+        proposal.update_columns(state: state,
+                                execution_error: "Net::ReadTimeout: the API did not answer",
+                                execution_failed_at: Time.current,
+                                execution_retry_queued_at: nil)
+
+        error = assert_raises(Proposal::GateError, "retry wrote to a #{state} row") do
+          ApprovalIntake.retry_execution(proposal, by: "sam@acme.test", execute: false)
+        end
+        assert_equal "proposal #{proposal.id} is #{state}, so there is no approved action to retry",
+                     error.message
+
+        # ...and it left the row exactly as it found it. The failure an operator
+        # was looking at is still there to look at.
+        proposal.reload
+        assert proposal.execution_failed?, "a refused retry erased a #{state} row's failure"
+        assert_equal "Net::ReadTimeout: the API did not answer", proposal.execution_error
+        refute proposal.execution_retry_queued?,
+               "a refused retry told every surface a #{state} row had a retry coming"
+      end
+    end
+
+    test "a deferred retry cannot leave a stamp on a row nothing will ever execute" do
+      # The stamp's whole contract is that Proposal::Execute clears it once there
+      # is an outcome to report. A deferring surface only queues an approved row
+      # (Slack::Intake#hand_off_execution), so on a rejected one Execute never
+      # runs — and "a retry is queued" would be true forever.
+      proposal = staged_message
+      ApprovalIntake.reject(proposal, by: "dana@acme.test", reason: "we already refunded them")
+
+      assert_raises(Proposal::GateError) do
+        ApprovalIntake.retry_execution(proposal, by: "sam@acme.test", execute: false)
+      end
+
+      refute proposal.reload.execution_retry_queued?
+    end
+
     test "retrying inline stays the default, and leaves no queued-retry stamp behind" do
       proposal = failed_execution
 
