@@ -230,6 +230,15 @@ input:focus-visible, select:focus-visible, textarea:focus-visible, button:focus-
 @media (max-width: 40rem) {
   body { padding: 1.25rem 1rem 3rem; }
   table { font-size: 0.82rem; }
+
+  /* The queue screens carry seven columns, which no phone width fits: the table
+     was pushing the whole page sideways (816px of content in a 380px viewport),
+     so the header and the prose scrolled along with it. Scroll the table on its
+     own instead. The views carry no wrapper element to put this on and are not
+     this sheet's to change, so the table itself becomes the scroll container —
+     only at this width, where a legible table is impossible anyway. */
+  table { display: block; overflow-x: auto; white-space: nowrap; }
+  td, tbody th { white-space: nowrap; }
   dl { grid-template-columns: 1fr; gap: 0.15rem; }
   dt { text-align: left; }
   dd { margin-bottom: 0.5rem; }
