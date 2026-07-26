@@ -165,6 +165,13 @@
           <% elsif proposal.execution_error.present? %>
             <strong><%= proposal.execution_error %></strong>
             <%= "(#{proposal.execution_failed_at})" if proposal.execution_failed? %>
+          <% elsif proposal.execution_retry_queued? %>
+            <%# A retry cleared the failure that used to be printed here. Saying so
+                is the whole reason it is stamped on the row: without this line the
+                proposal would read "approved, nothing wrong" while the previous
+                error is gone and nothing has replaced it. %>
+            a retry was queued at <%= proposal.execution_retry_queued_at %> —
+            it clears when the executor reports back
           <% else %>
             approved, not yet dispatched
           <% end %>
@@ -174,6 +181,8 @@
             <%= button_to "I performed this", admin_proposal_path(proposal), method: :patch,
                   params: { transition: "executed" } %>
           <% else %>
+            <%# Still offered while a retry is queued: a queue that never runs is
+                exactly when an operator needs the browser's inline path back. %>
             <%= button_to "Retry execution", admin_proposal_path(proposal), method: :patch,
                   params: { transition: "retry" } %>
           <% end %>

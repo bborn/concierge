@@ -42,6 +42,21 @@ module Concierge
       end
 
       def call
+        outcome = decide
+        # A retry someone queued (ApprovalIntake.retry_execution with +execute:
+        # false+) is over the moment this class has an answer — including the
+        # refusals it does not write to the row, like a missing executor or a
+        # halted agent. Leaving the stamp on one of those would have the admin
+        # queue promising, forever, that something is about to happen.
+        clear_queued_retry if proposal.execution_retry_queued?
+        outcome
+      end
+
+      private
+
+      attr_reader :proposal
+
+      def decide
         refusal = refusal_reason
         return refusal if refusal
 
@@ -55,9 +70,9 @@ module Concierge
         dispatch
       end
 
-      private
-
-      attr_reader :proposal
+      def clear_queued_retry
+        proposal.update_columns(execution_retry_queued_at: nil, updated_at: Time.current)
+      end
 
       def refusal_reason
         return :already_executed if proposal.executed?
@@ -117,7 +132,7 @@ module Concierge
         AgentProposal
           .where(id: proposal.id, state: "approved", execution_failed_at: nil)
           .update_all(state: "executed", executed_at: now, executed_by: executed_by,
-                      execution_error: nil, updated_at: now)
+                      execution_error: nil, execution_retry_queued_at: nil, updated_at: now)
           .positive?
           .tap { proposal.reload }
       end

@@ -101,10 +101,30 @@ module Concierge
       # Clear a recorded execution failure and try again. Deliberately a human
       # act: automatic retries of an action a human approved once is how one
       # refund becomes two, so nothing in the engine re-attempts on its own.
-      def retry_execution(proposal, by:)
+      #
+      # +execute: false+ is the same opt-out +approve+ has, and for the same
+      # reason (§10.7): a surface with a response budget — a Retry button on a
+      # Slack card — cannot promise to outlast a host executor, so it clears the
+      # failure here (a row write, and it *is* the record of the human's decision
+      # to try again) and hands the doing to Concierge::ProposalExecutionJob. The
+      # job needs no +retry_failed:+ of its own, because the failure it would have
+      # been refused by is already cleared.
+      #
+      # Clearing without executing would otherwise leave a row reading "approved,
+      # nothing recorded, nothing wrong" — indistinguishable from an approval that
+      # was never attempted, with the previous failure erased and nothing in its
+      # place. So the queued retry is stamped on the row, where the admin queue and
+      # any card that redraws can both see it, and Proposal::Execute clears it
+      # again the moment it has a real outcome to report.
+      #
+      # Returns the execution status when it executed, +:approved+ when it left the
+      # doing to someone else — the same two answers +approve+ gives.
+      def retry_execution(proposal, by:, execute: true)
         actor = assert_human!(by, "retry")
         proposal.update_columns(execution_error: nil, execution_failed_at: nil,
+                                execution_retry_queued_at: (Time.current unless execute),
                                 updated_at: Time.current)
+        return :approved unless execute
 
         Proposal::Execute.call(proposal, by: actor, retry_failed: true)
       end

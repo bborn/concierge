@@ -462,6 +462,30 @@ Surfaces without a deadline keep executing inline — `/concierge/admin/proposal
 runs in a browser, which has no three-second ceiling, and its synchronous path is
 what makes the ordering assertable end to end.
 
+### The same opt-out on retry, and the state it has to leave behind
+
+`ApprovalIntake.retry_execution(proposal, by:, execute: true)` takes the identical
+seam, because retrying was the one path left that re-entered `Proposal::Execute`
+synchronously with no way out. A surface that clears a failure from a Slack card
+would hit exactly the wall Approve no longer hits.
+
+Retry differs from approve in one way that matters. The synchronous half of an
+approval *adds* to the row — who approved, when. The synchronous half of a retry
+**erases**: clearing `execution_error`/`execution_failed_at` is what re-opens the
+row to an executor (`Execute` claims only a row with `execution_failed_at IS
+NULL`), and it destroys the only diagnostic an operator had. Between that clear
+and the job, the row reads *approved, nothing recorded, nothing wrong* — the same
+three columns as an approval nobody has attempted. If the enqueue fails, or the
+queue is down, that window never closes.
+
+So the queued retry is written to the row too — `execution_retry_queued_at` — and
+`Proposal::Execute` clears it the moment it has any outcome to report, including
+the refusals it does not otherwise write down (no executor, a halted agent). Two
+surfaces read it: the admin queue's *"a retry was queued at …"*, and the Slack
+card's `unexecuted_reason`. The card's `executing:` flag stays what it is — a
+first execution is knowable only to the caller that queued it — but a retry is not
+that, because it has already deleted something every other surface was showing.
+
 ---
 
 ## 10.8 Engine authority vs host invariants — the boundary

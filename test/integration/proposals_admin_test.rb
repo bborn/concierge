@@ -173,6 +173,31 @@ class ProposalsAdminTest < ActionDispatch::IntegrationTest
     assert proposal.reload.executed?
   end
 
+  test "a retry queued from somewhere else is visible here, where the failure used to be" do
+    # The queue is not the surface that queued it, so it cannot be told — it has
+    # to read it off the row. Without this line the proposal reads "approved, not
+    # yet dispatched": the failure an operator was looking at is gone, and nothing
+    # says a retry replaced it.
+    Concierge.configure do |c|
+      c.proposals { execute("record.update") { |_p, _s| raise "the CRM was down" } }
+    end
+    proposal = Concierge::Proposal.propose(@billing, action_class: "record.update",
+                                                     payload: { field: "plan" })
+    patch "/concierge/admin/proposals/#{proposal.id}", params: { transition: "approve" }
+    assert proposal.reload.execution_failed?
+
+    # A deadline-bound surface clears the failure and hands the doing to a job.
+    Concierge::ApprovalIntake.retry_execution(proposal, by: "dana@acme.test", execute: false)
+
+    get "/concierge/admin/proposals"
+
+    assert_includes response.body, "a retry was queued at"
+    refute_includes response.body, "approved, not yet dispatched"
+    # ...and the browser's inline path is still offered, because a queue that
+    # never runs is exactly when an operator needs it.
+    assert_includes response.body, "Retry execution"
+  end
+
   test "an unknown transition is refused rather than guessed at" do
     proposal = staged_message
 

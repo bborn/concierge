@@ -274,6 +274,46 @@ module Concierge
       assert_equal [ "C0BILLING" ], transport.calls_to("chat.update").map { |call| call.payload[:channel] }.uniq
     end
 
+    test "a retry deferred to a job re-attempts its own cell and no other" do
+      # A deferred *retry* is a second way for one cell's work to cross a process
+      # boundary as a bare proposal id (§10.7) — and it starts from a row that has
+      # already failed once, so getting the wrong one would re-attempt a
+      # neighbour's action nobody asked to be re-attempted. The job re-resolves the
+      # (agent, account) pair from the row; it carries no scope of its own.
+      acme   = @grid[[ :billing, :acme ]]
+      globex = @grid[[ :billing, :globex ]]
+      [ acme, globex ].each do |scope|
+        Concierge::Outreach.deliver(
+          Concierge::Result.new(reply_text: "note for #{scope.subject.id}"), scope, channel: :in_app
+        )
+      end
+      # Both cells are approved and both failed the same way — the case where a
+      # retry aimed at one could plausibly land on the other.
+      rows = { acme: Concierge::AgentProposal.for_scope(acme).sole,
+               globex: Concierge::AgentProposal.for_scope(globex).sole }
+      rows.each_value do |row|
+        row.update_columns(state: "approved", approved_by: "sam@acme.test",
+                           approved_at: Time.current, execution_error: "the API was down",
+                           execution_failed_at: Time.current)
+      end
+
+      Concierge::ApprovalIntake.retry_execution(rows[:acme], by: "sam@acme.test", execute: false)
+      Concierge::ProposalExecutionJob.perform_now(rows[:acme].id, by: "sam@acme.test")
+
+      assert_equal "executed", rows[:acme].reload.state
+      assert_equal 1, Concierge::ChannelDelivery.for_scope(acme).count
+      assert_equal 0, Concierge::ChannelDelivery.for_scope(globex).count,
+                   "a queued retry re-attempted into the neighbouring account"
+      assert_equal 0, Concierge::ChannelDelivery.for_scope(@grid[[ :csm, :acme ]]).count,
+                   "a queued billing retry was audited under the CSM"
+      # The neighbour's failure is untouched: it was never cleared, so nothing in
+      # the engine will re-attempt it on its own.
+      globex_row = rows[:globex].reload
+      assert_equal "approved", globex_row.state
+      assert globex_row.execution_failed?, "a retry of one cell cleared another cell's failure"
+      refute globex_row.execution_retry_queued?
+    end
+
     test "a guard rule blocks execution only inside the cell that owns it" do
       acme   = @grid[[ :billing, :acme ]]
       globex = @grid[[ :billing, :globex ]]

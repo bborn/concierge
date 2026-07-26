@@ -123,7 +123,62 @@ module Concierge
       end
     end
 
+    test "retry can clear the failure without executing, for a surface that defers it" do
+      # §10.7's opt-out, which retry did not have: it was the one path left that
+      # re-entered Proposal::Execute synchronously with no way out, so the first
+      # Retry button on a Slack card would have hit the three-second wall the
+      # Approve button no longer hits.
+      proposal = failed_execution
+
+      assert_equal :approved, ApprovalIntake.retry_execution(proposal, by: "sam@acme.test",
+                                                                       execute: false)
+
+      proposal.reload
+      # The clear is the record of the human's decision, so it is durable before
+      # the surface answers — exactly like the approval it mirrors.
+      assert_nil proposal.execution_error
+      refute proposal.execution_failed?
+      # ...and nothing was performed.
+      assert_equal 0, ChannelDelivery.count
+      assert proposal.approved?
+    end
+
+    test "a deferred retry says so on the row, because it erased the failure that was there" do
+      # "approved, no error, nothing failed" is what an approval nobody has
+      # attempted looks like. A retry that cleared a failure and queued the doing
+      # must not be indistinguishable from one, or the only diagnostic an operator
+      # had is gone with nothing in its place.
+      proposal = failed_execution
+
+      ApprovalIntake.retry_execution(proposal, by: "sam@acme.test", execute: false)
+
+      assert proposal.reload.execution_retry_queued?
+    end
+
+    test "retrying inline stays the default, and leaves no queued-retry stamp behind" do
+      proposal = failed_execution
+
+      assert_equal :executed, ApprovalIntake.retry_execution(proposal, by: "sam@acme.test")
+
+      proposal.reload
+      assert proposal.executed?
+      assert_equal 1, ChannelDelivery.count
+      refute proposal.execution_retry_queued?,
+             "an execution that already happened is not still queued"
+    end
+
     private
+
+    # Where a retry starts from: approved, attempted, and the attempt recorded a
+    # failure a human has now looked at.
+    def failed_execution
+      staged_message.tap do |proposal|
+        proposal.update_columns(state: "approved", approved_by: "sam@acme.test",
+                                approved_at: Time.current,
+                                execution_error: "Net::ReadTimeout: the API did not answer",
+                                execution_failed_at: Time.current)
+      end
+    end
 
     def staged_message
       Outreach.deliver(Result.new(reply_text: "your card expires soon"), @billing, channel: :in_app)

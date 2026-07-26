@@ -1,0 +1,98 @@
+{
+  "1 · the failure, before anyone retried": [
+    {
+      "type": "header",
+      "text": {
+        "type": "plain_text",
+        "text": "Proposal approved: record.plan_change"
+      }
+    },
+    {
+      "type": "section",
+      "text": {
+        "type": "mrkdwn",
+        "text": "*billing* on *account #3*\n• *from*: free\n• *to*: pro\n• *reason*: they clicked upgrade twice"
+      }
+    },
+    {
+      "type": "section",
+      "text": {
+        "type": "mrkdwn",
+        "text": ":hourglass: *Approved* by dana@acme.test at 2026-07-26 05:29:12 UTC — not performed: Net::ReadTimeout: the billing API did not answer"
+      }
+    },
+    {
+      "type": "context",
+      "elements": [
+        {
+          "type": "mrkdwn",
+          "text": "Slack is the remote control; the record is `/concierge/admin/proposals` — proposal #4."
+        }
+      ]
+    }
+  ],
+  "2 · the retry, cleared in the request and queued": [
+    {
+      "type": "header",
+      "text": {
+        "type": "plain_text",
+        "text": "Proposal approved: record.plan_change"
+      }
+    },
+    {
+      "type": "section",
+      "text": {
+        "type": "mrkdwn",
+        "text": "*billing* on *account #3*\n• *from*: free\n• *to*: pro\n• *reason*: they clicked upgrade twice"
+      }
+    },
+    {
+      "type": "section",
+      "text": {
+        "type": "mrkdwn",
+        "text": ":hourglass: *Approved* by dana@acme.test at 2026-07-26 05:29:12 UTC — a retry is queued — this card updates when it is performed"
+      }
+    },
+    {
+      "type": "context",
+      "elements": [
+        {
+          "type": "mrkdwn",
+          "text": "Slack is the remote control; the record is `/concierge/admin/proposals` — proposal #4."
+        }
+      ]
+    }
+  ],
+  "3 · what the job made of it": [
+    {
+      "type": "header",
+      "text": {
+        "type": "plain_text",
+        "text": "Proposal executed: record.plan_change"
+      }
+    },
+    {
+      "type": "section",
+      "text": {
+        "type": "mrkdwn",
+        "text": "*billing* on *account #3*\n• *from*: free\n• *to*: pro\n• *reason*: they clicked upgrade twice"
+      }
+    },
+    {
+      "type": "section",
+      "text": {
+        "type": "mrkdwn",
+        "text": ":white_check_mark: *Executed* at 2026-07-26 05:29:12 UTC by dana@acme.test\nApproved by dana@acme.test"
+      }
+    },
+    {
+      "type": "context",
+      "elements": [
+        {
+          "type": "mrkdwn",
+          "text": "Slack is the remote control; the record is `/concierge/admin/proposals` — proposal #4."
+        }
+      ]
+    }
+  ]
+}
