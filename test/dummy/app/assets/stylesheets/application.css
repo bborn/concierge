@@ -267,6 +267,9 @@ input:focus, textarea:focus, select:focus { outline: 2px solid var(--accent); ou
 .picker button:hover { background: var(--surface-2); }
 .picker__who { font-weight: 600; }
 .picker__where { color: var(--text-dim); font-size: 13px; margin-left: auto; }
+/* Staff are not one more seat in the list — they are the other side of it. */
+.picker__staff { border-top: 1px solid var(--border); background: var(--surface-2); }
+.avatar--staff { background: var(--text-dim); }
 
 /* --- inbox -------------------------------------------------------------- */
 

@@ -52,23 +52,37 @@ Concierge.configure do |config|
   # Without this, the rule gate refuses rather than inventing one.
   # config.admin_actor = ->(controller) { controller.current_user.email }
 
-  # 7b. Guard the per-account endpoints — REQUIRED to use them at all. The chat
-  # endpoint (POST /concierge/accounts/:subject_id/chat) and the operator handoff
-  # endpoints take the account out of the URL, so the engine has to ask you
-  # whether this requester may act as that (agent, account) pair. Until you set
-  # this they refuse every request and log why: an endpoint that answers with an
-  # account's memory, rules and snapshot cannot default to open.
+  # 7b. Guard the per-account endpoints — REQUIRED to use them at all. They take
+  # the account out of the URL, so the engine has to ask you whether this
+  # requester may act as that (agent, account) pair. Until you set these they
+  # refuse every request and log why: an endpoint that answers with an account's
+  # memory, rules and snapshot cannot default to open.
   #
   # These are the ENGINE's controllers, not yours, so there is no current_user on
   # them unless you put one there — read your session directly.
+  #
+  # Who may chat as an account (POST /concierge/accounts/:subject_id/chat):
+  # "is this account yours?"
   #
   # config.authorize_subject = lambda do |controller, scope|
   #   user = User.find_by(id: controller.session[:user_id])
   #   user && user.account_id.to_s == scope.subject.id.to_s
   # end
   #
-  # scope.agent_slug is in reach too, so "support may drive billing, customers may
-  # not" is one more clause rather than a second seam.
+  # Who may seize a thread, speak on it as your company, and release it (the
+  # handoff endpoints): "are you staff, and is this account in your book?" A
+  # SEPARATE hook, which does not fall back to the one above — a customer answers
+  # "is this account yours" yes about their own account, and would otherwise be
+  # able to message themselves as support and write pinned human memory into
+  # their own agent's head.
+  #
+  # config.authorize_operator = lambda do |controller, scope|
+  #   staff = Staff.find_by(id: controller.session[:staff_id])
+  #   staff && staff.covers?(scope.subject.id)
+  # end
+  #
+  # scope.agent_slug is in reach in both, so "only the billing team may take the
+  # billing thread" is one more clause.
 
   # 8. Rules — generalized, versioned, human-gated behavioral instructions, split
   # out from memory. A human correction is stored verbatim and a background job

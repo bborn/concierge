@@ -33,6 +33,14 @@ module Concierge
         post signin_path, params: { user_id: user.id }
       end
 
+      # The staff door. Disjoint from the customer one — it sets no user_id —
+      # because "are you staff" and "is this account yours" are the two different
+      # questions the engine's endpoints ask (config.authorize_operator and
+      # config.authorize_subject).
+      def sign_in_as_operator
+        post signin_path, params: { operator: 1 }
+      end
+
       def csm_scope(tenant)     = scope_for(:csm, tenant)
       def billing_scope(tenant) = scope_for(:billing, tenant)
 

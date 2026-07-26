@@ -26,6 +26,21 @@
           <% end %>
         </li>
       <% end %>
+
+      <%# The other side of the desk. Deliberately not a customer seat: staff get
+          their own session, and the engine asks a different question about them
+          (config.authorize_operator) before letting anyone seize a thread and
+          speak to a customer as Acme. %>
+      <li class="picker__staff">
+        <%= form_with url: signin_path, method: :post do %>
+          <%= hidden_field_tag :operator, 1 %>
+          <button type="submit">
+            <span class="avatar avatar--staff">S</span>
+            <span class="picker__who">Support</span>
+            <span class="picker__where">Acme staff · not a customer</span>
+          </button>
+        <% end %>
+      </li>
     </ul>
   </div>
 

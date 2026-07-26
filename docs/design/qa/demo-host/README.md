@@ -45,7 +45,10 @@ verify" at the bottom.
 
 > **Update (2026-07-26):** fixed by task 5003 — the engine now has
 > `config.authorize_subject`, and the chat and handoff endpoints fail closed
-> without it. See `docs/design/qa/5003-chat-authorization/`.
+> without it. See `docs/design/qa/5003-chat-authorization/`. Task 5005 then split
+> the operator endpoints onto their own hook, `config.authorize_operator`, so
+> that a tenant-match answer no longer lets a customer seize their own thread —
+> see `docs/design/qa/5005-operator-authorization/`.
 
 
 `POST /concierge/accounts/:subject_id/chat` is unauthenticated — the engine has no

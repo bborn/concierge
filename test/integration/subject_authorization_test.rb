@@ -1,11 +1,15 @@
 require "test_helper"
 
-# The host-authorization seam for the engine's per-account endpoints
-# (config.authorize_subject, Concierge::ScopedEndpoint). The *isolation*
-# consequence — one account cannot reach another's — is asserted where it
-# belongs, in test/integration/host_isolation_test.rb against a real signed-in
-# host session. This file is the hook itself: what it is handed, what it may
-# answer, and what happens to a host that never sets it.
+# The *customer* half of the host-authorization seam for the engine's
+# per-account endpoints (config.authorize_subject, Concierge::ScopedEndpoint):
+# "is this account yours". The staff half — config.authorize_operator, and the
+# fact that neither hook answers the other's question — is
+# test/integration/operator_authorization_test.rb.
+#
+# The *isolation* consequence — one account cannot reach another's — is asserted
+# where it belongs, in test/integration/host_isolation_test.rb against a real
+# signed-in host session. This file is the hook itself: what it is handed, what
+# it may answer, and what happens to a host that never sets it.
 class SubjectAuthorizationTest < ActionDispatch::IntegrationTest
   setup do
     @tenant = Tenant.create!(name: "Acme", plan: "pro", last_active_at: 1.day.ago)
@@ -25,7 +29,7 @@ class SubjectAuthorizationTest < ActionDispatch::IntegrationTest
     assert_equal 0, Concierge::Conversation.count
   end
 
-  test "the handoff endpoints are refused when no hook is configured" do
+  test "the handoff endpoints are refused when no hook at all is configured" do
     post "/concierge/accounts/#{@tenant.id}/handoff", params: { operator: "sam" }
     assert_response :forbidden
 
@@ -90,14 +94,14 @@ class SubjectAuthorizationTest < ActionDispatch::IntegrationTest
     assert_empty Concierge::Test::FakeChat.current.prompts
   end
 
-  test "a hook that says yes lets the operator endpoints through unchanged" do
+  test "a hook that says yes lets the chat endpoint through unchanged" do
     Concierge::Test.authorize_all_subjects!
-    subject = Concierge.config.account.build(@tenant)
+    Concierge::Test::FakeChat.script(reply: "Kit here.")
 
-    post "/concierge/accounts/#{@tenant.id}/handoff", params: { operator: "sam" }
+    post "/concierge/accounts/#{@tenant.id}/chat", params: { message: "hi" }
 
-    assert_response :created
-    assert Concierge::Handoff.active_for(subject)
+    assert_response :success
+    assert_equal "Kit here.", response.parsed_body["reply"]
   end
 
   # --- What the gate does not cover -------------------------------------------

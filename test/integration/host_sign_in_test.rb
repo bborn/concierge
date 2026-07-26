@@ -47,6 +47,38 @@ class HostSignInTest < ActionDispatch::IntegrationTest
     assert_select ".entry__title", text: "Acme only", count: 0
   end
 
+  test "the picker offers a staff door that is not one of the seats" do
+    get signin_path
+
+    assert_select ".picker__staff .picker__who", text: "Support"
+    assert_select ".picker__staff .picker__where", text: /not a customer/
+  end
+
+  test "signing in as support establishes an operator and no customer" do
+    sign_in_as_operator
+
+    assert_redirected_to "/concierge/admin/proposals"
+    get "/account"
+    assert_redirected_to "/signin"
+  end
+
+  test "signing in as a customer clears any operator session, and back again" do
+    # reset_session on both doors, so a browser can never hold both answers at
+    # once — which is the only way "are you staff" and "is this account yours"
+    # stay two questions rather than a union.
+    sign_in_as_operator
+    sign_in_as @dana
+
+    post "/concierge/accounts/#{@acme.id}/handoff", params: { operator: "dana@acme.test" }
+    assert_response :forbidden
+
+    # A literal path: the request above went into the mounted engine, so the host
+    # helper would come back with "/concierge" on the front of it.
+    post "/signin", params: { operator: 1 }
+    post "/concierge/accounts/#{@acme.id}/handoff", params: { operator: Operator::EMAIL }
+    assert_response :created
+  end
+
   test "signing out drops the session" do
     sign_in_as @dana
     delete signout_path

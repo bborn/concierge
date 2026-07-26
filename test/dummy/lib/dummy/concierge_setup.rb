@@ -70,14 +70,30 @@ module Dummy
       c.admin_actor = ->(_controller) { "operator@acme.test" }
 
       # ...and who may drive an account's agent over the engine's own endpoints.
-      # The chat and handoff endpoints take the account out of the URL, so
-      # without this a signed-in customer could hand-craft a POST naming another
-      # tenant's subject_id. The engine controllers are the *engine's*, not this
-      # app's, so there is no current_user on them: the session is the seam.
+      # The chat endpoint takes the account out of the URL, so without this a
+      # signed-in customer could hand-craft a POST naming another tenant's
+      # subject_id. The engine controllers are the *engine's*, not this app's, so
+      # there is no current_user on them: the session is the seam.
       c.authorize_subject = lambda do |controller, scope|
         user = User.find_by(id: controller.session[:user_id])
         user && user.tenant_id.to_s == scope.subject.id.to_s
       end
+
+      # A different question, so a different hook. The handoff endpoints seize a
+      # customer's thread, speak on it as Acme, and land what is said as pinned
+      # human memory in that agent's head — so the question is "are you staff",
+      # and the tenant match above is exactly the wrong answer to it: Dana passes
+      # it about her own account and would be support-splaining to herself.
+      #
+      # Staff sign in through their own door here (Support in the picker), which
+      # sets no user_id at all — the two sessions are disjoint on purpose, so
+      # neither hook can accidentally satisfy the other.
+      #
+      # A real host would narrow by scope as well — "...and is this account in
+      # your book", or "only the on-call operator may take the billing thread" —
+      # which is why the hook is handed the Scope and not just the controller.
+      # This demo has one book with every account in it, so it does not.
+      c.authorize_operator = ->(controller, _scope) { Operator.signed_in?(controller.session) }
     end
 
     def rules(c)
