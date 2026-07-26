@@ -486,6 +486,22 @@ card's `unexecuted_reason`. The card's `executing:` flag stays what it is — a
 first execution is knowable only to the caller that queued it — but a retry is not
 that, because it has already deleted something every other surface was showing.
 
+And retry asserts what it is allowed to act on, like every other transition on the
+seam: **an approved row, or a `GateError`.** It used to assert only that the actor
+was human, so it would erase the failure columns of a `proposed`, `rejected` or
+`expired` proposal — near-harmless while `Proposal::Execute` always ran straight
+afterwards and refused with `:not_approved`. The opt-out ended that. A deferring
+surface queues only an approved row (`Slack::Intake#hand_off_execution`), so a
+deferred retry aimed at a rejected one is never queued, `Execute` never runs, and
+the one thing that clears the stamp never gets the chance — leaving a row that
+says *"a retry is queued"* for good, about an action nobody will ever perform. The
+refusal takes `record_execution`'s shape, and reaches the operator the same way
+every other refusal does:
+
+```
+proposal #12 is rejected, so there is no approved action to retry
+```
+
 ---
 
 ## 10.8 Engine authority vs host invariants — the boundary

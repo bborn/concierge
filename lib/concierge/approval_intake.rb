@@ -101,6 +101,8 @@ module Concierge
       # Clear a recorded execution failure and try again. Deliberately a human
       # act: automatic retries of an action a human approved once is how one
       # refund becomes two, so nothing in the engine re-attempts on its own.
+      # Requires an approved row, for the same reason #record_execution does:
+      # there is no approved action to re-attempt on one nobody approved.
       #
       # +execute: false+ is the same opt-out +approve+ has, and for the same
       # reason (§10.7): a surface with a response budget — a Retry button on a
@@ -121,6 +123,7 @@ module Concierge
       # doing to someone else — the same two answers +approve+ gives.
       def retry_execution(proposal, by:, execute: true)
         actor = assert_human!(by, "retry")
+        assert_retryable!(proposal)
         proposal.update_columns(execution_error: nil, execution_failed_at: nil,
                                 execution_retry_queued_at: (Time.current unless execute),
                                 updated_at: Time.current)
@@ -156,6 +159,27 @@ module Concierge
 
         raise Proposal::GateError,
               "proposal #{proposal.id} is #{proposal.state}, so there is nothing to decide"
+      end
+
+      # A retry re-opens an approved row to an executor, so a row nobody approved
+      # has nothing to re-open. This was the one transition here that asserted
+      # only who the actor was: it would clear execution_error/execution_failed_at
+      # on a proposed, rejected or expired row, which was near-harmless while
+      # Proposal::Execute always ran straight afterwards and refused with
+      # +:not_approved+.
+      #
+      # +execute: false+ ended that. It stamps execution_retry_queued_at and hands
+      # the doing to a surface whose own guard is "approved and not
+      # human_execution" (Slack::Intake#hand_off_execution) — so a deferred retry
+      # aimed at a rejected row is never queued, Execute never runs, and the only
+      # thing that clears the stamp never gets the chance. The row would say "a
+      # retry is queued" for good.
+      def assert_retryable!(proposal)
+        return if proposal.approved?
+
+        raise Proposal::GateError,
+              "proposal #{proposal.id} is #{proposal.state}, so there is no approved " \
+              "action to retry"
       end
 
       def assert_maker_checker!(proposal, actor)

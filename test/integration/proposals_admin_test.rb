@@ -198,6 +198,27 @@ class ProposalsAdminTest < ActionDispatch::IntegrationTest
     assert_includes response.body, "Retry execution"
   end
 
+  test "the Retry button on a row nobody approved is refused, and says why" do
+    # Which alert an operator gets here is a decision, so it is written down.
+    # Retry used to clear the failure columns first and let Proposal::Execute
+    # refuse afterwards, so the screen said "approved but not executed (not
+    # approved)" — about a proposal that was rejected, after writing to it. It is
+    # now a GateError from the seam, which names the state and never touches the
+    # row. Both are alerts; only one of them is true.
+    proposal = staged_message
+    patch "/concierge/admin/proposals/#{proposal.id}",
+          params: { transition: "reject", reason: "we already emailed them today" }
+    assert proposal.reload.rejected?
+
+    patch "/concierge/admin/proposals/#{proposal.id}", params: { transition: "retry" }
+
+    assert_equal "proposal #{proposal.id} is rejected, so there is no approved action to retry",
+                 flash[:alert]
+    proposal.reload
+    assert proposal.rejected?
+    refute proposal.execution_retry_queued?
+  end
+
   test "an unknown transition is refused rather than guessed at" do
     proposal = staged_message
 
