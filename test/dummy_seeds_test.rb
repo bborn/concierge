@@ -153,6 +153,32 @@ module Concierge
         "a distinction without a difference"
     end
 
+    # Every test above reads one seed run against an empty throwaway database, so
+    # none of them exercise the path the README actually documents: `bin/rails
+    # db:seed` to reset a demo you have been *using*. Reseeding is a different
+    # operation — it opens with `delete_all` across every table, and that only
+    # works if the teardown list is closed under foreign keys.
+    #
+    # It was not. `tool_calls.message_id` references `messages` and `ToolCall` was
+    # absent from the list, so `Message.delete_all` raised
+    # `ActiveRecord::InvalidForeignKey`. Invisible until then because tool_calls
+    # rows exist only once a *real* model has called a tool — the offline scripted
+    # chat never does — so the reset path broke precisely for whoever had just
+    # driven the demo with a live key.
+    #
+    # This seeds, plants a tool call the way a live turn would, and seeds again.
+    test "the demo can be reset with db:seed after a live turn has written tool calls" do
+      status, err = self.class.reseed_after_tool_call
+
+      assert status, <<~MESSAGE
+        `bin/rails db:seed` failed on a database that already had data, so the
+        documented way to reset the demo is broken. Anything the seed truncates
+        must be truncated before the rows pointing at it:
+
+        #{err.to_s.lines.grep(/Error|Exception|seeds\.rb/).first(4).join}
+      MESSAGE
+    end
+
     # Seeds run against a database of their own, with the credentials cleared:
     # that is the path the README documents (`bin/rails db:seed` offline), and
     # it keeps this out of the suite's SQLite file. Two boots is one too many,
@@ -175,6 +201,45 @@ module Concierge
         raise "the seed run printed no inventory:\n#{out}\n#{err}" unless payload
 
         JSON.parse(payload)
+      end
+    end
+
+    # A second seed over the first, with a tool call in between so the run looks
+    # like one a live model produced. Its own database and its own boot, for the
+    # same reason `seeded` has: the seeds truncate everything.
+    RESEED_SCRIPT = <<~RUBY.freeze
+      load Rails.root.join("db/seeds.rb").to_s
+
+      # What a real tool-using turn leaves behind, and the shape that matters:
+      # the two tables reference *each other*. The assistant turn owns the
+      # tool_call, and the tool-result turn points back at it. A fixture with only
+      # the first half exercises an ordering problem; only the pair exercises the
+      # cycle, which no ordering of delete_all can resolve.
+      asked = Message.where(role: "assistant").last
+      raise "no assistant message to attach a tool call to" unless asked
+
+      call = ToolCall.create!(message: asked, tool_call_id: "toolu_reseed_fixture",
+                              name: "recall", arguments: { "query" => "plan" })
+      Message.create!(chat: asked.chat, role: "tool", content: "[]",
+                      tool_call_id: call.id)
+
+      load Rails.root.join("db/seeds.rb").to_s
+      print "RESEEDED_OK"
+    RUBY
+
+    def self.reseed_after_tool_call
+      @reseed_after_tool_call ||= Dir.mktmpdir("concierge-reseed") do |dir|
+        dummy = File.expand_path("dummy", __dir__)
+        env   = {
+          "ANTHROPIC_API_KEY" => nil, "OPENAI_API_KEY" => nil, "RAILS_ENV" => "test",
+          "DATABASE_URL" => "sqlite3:#{File.join(dir, 'reseed.sqlite3')}"
+        }
+
+        _out, prep_err, prep_status = Open3.capture3(env, "bin/rails", "db:prepare", chdir: dummy)
+        raise "could not prepare the reseed database:\n#{prep_err}" unless prep_status.success?
+
+        out, err, status = Open3.capture3(env, "bin/rails", "runner", RESEED_SCRIPT, chdir: dummy)
+        [ status.success? && out.include?("RESEEDED_OK"), err ]
       end
     end
 

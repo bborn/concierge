@@ -13,11 +13,24 @@
 
 require "securerandom"
 
+# ruby_llm's tool-call tables reference each other in a cycle:
+# `tool_calls.message_id -> messages` (the assistant turn that asked for the
+# call) and `messages.tool_call_id -> tool_calls` (the tool-result turn that
+# answers it). No ordering of `delete_all` can satisfy a cycle, so the link is
+# nulled first and the tables are then truncated child-before-parent.
+#
+# Both only ever have rows once a *real* model has called a tool — the scripted
+# offline chat never does — so this broke `db:seed` only for someone who had just
+# driven the demo with a live key, which is the audience the seeds exist for.
+Message.update_all(tool_call_id: nil)
+
+# Order matters below: `delete_all` does not cascade, so a table goes before the
+# one it points at.
 [ Concierge::SlackCard, Concierge::Memory, Concierge::Routine, Concierge::ChannelDelivery,
   Concierge::Handoff, Concierge::OutreachPreference, Concierge::Conversation,
   Concierge::AgentProposal, Concierge::BudgetLedger, Concierge::AgentRuleRevision,
   Concierge::AgentRule, Concierge::AgentRun,
-  Message, Chat, Model, InboxMessage, ChangelogEntry, User, Tenant ].each(&:delete_all)
+  ToolCall, Message, Chat, Model, InboxMessage, ChangelogEntry, User, Tenant ].each(&:delete_all)
 
 acme = Tenant.create!(name: "Acme Corp", plan: "pro", last_active_at: 2.days.ago)
 dana = acme.users.create!(email: "dana@acme.test")
