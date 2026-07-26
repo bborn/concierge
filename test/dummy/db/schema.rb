@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_07_26_090001) do
+ActiveRecord::Schema[8.1].define(version: 2026_07_26_090002) do
   create_table "active_storage_attachments", force: :cascade do |t|
     t.bigint "blob_id", null: false
     t.datetime "created_at", null: false
@@ -89,8 +89,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_26_090001) do
     t.string "subject_id", null: false
     t.string "subject_type", null: false
     t.datetime "updated_at", null: false
+    t.index ["agent_slug", "subject_type", "subject_id", "idempotency_key"], name: "index_concierge_agent_proposals_on_scope_and_idempotency_key", unique: true
     t.index ["agent_slug", "subject_type", "subject_id", "state"], name: "index_concierge_agent_proposals_on_scope_and_state"
-    t.index ["idempotency_key"], name: "index_concierge_agent_proposals_on_idempotency_key", unique: true
     t.index ["state", "expires_at"], name: "index_concierge_agent_proposals_on_state_and_expiry"
   end
 
