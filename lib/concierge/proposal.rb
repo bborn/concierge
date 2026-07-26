@@ -41,6 +41,9 @@ module Concierge
       # Supplying a deterministic key makes *proposing* idempotent too: a second
       # call with the same key returns the existing row instead of stacking a
       # duplicate card (the at-least-once-delivery lesson from §10.2's job).
+      # The key is scoped to the (Agent × Subject) pair, so a host is free to
+      # derive one from a domain id — +"plan-change-#{order_id}"+ — without having
+      # to remember to namespace it by agent and account itself.
       def propose(target, action_class:, payload: {}, created_by: nil, precondition: nil,
                   rule_ids_applied: nil, agent_run: nil, idempotency_key: nil,
                   expires_in: :default)
@@ -48,9 +51,13 @@ module Concierge
         action_class = action_class.to_s
         gate         = gate_for(scope, action_class)
 
-        if idempotency_key && (existing = AgentProposal.find_by(idempotency_key: idempotency_key))
-          return existing
-        end
+        # Scoped, like every other read in the phase (§10.12). A key is only ever
+        # meaningful inside the cell that minted it: deduping globally would hand
+        # this caller another (agent, account)'s row and never stage the action it
+        # actually asked for.
+        existing = idempotency_key && AgentProposal.for_scope(scope)
+                                                   .find_by(idempotency_key: idempotency_key)
+        return existing if existing
 
         notify(AgentProposal.create!(
           **scope.key,

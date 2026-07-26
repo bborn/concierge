@@ -136,12 +136,12 @@ module Concierge
       Concierge::Handoff.seize!(csm, operator: "sam")
       Concierge::Governance.new.record!(csm, channel: "email")
       Concierge::ChatResolver.call(csm)
-      Concierge::AgentProposal.create!(**csm.key, action_class: "record.update",
-                                       gate: "human_approval", idempotency_key: "k1")
+      proposal = Concierge::AgentProposal.create!(**csm.key, action_class: "record.update",
+                                                  gate: "human_approval", idempotency_key: "k1")
       Concierge::AgentRule.create!(**csm.key, body: "a rule", state: "active")
       Concierge::AgentRun.create!(**csm.key, trigger: "reactive", status: "ok")
 
-      Concierge::SlackCard.create!(**csm.key, agent_proposal_id: 1, state: "posted",
+      Concierge::SlackCard.create!(**csm.key, agent_proposal_id: proposal.id, state: "posted",
                                    channel_id: "C0CSM", message_ts: "1.1", posted_at: Time.current)
 
       [ Concierge::Handoff, Concierge::ChannelDelivery, Concierge::Conversation,
@@ -170,6 +170,47 @@ module Concierge
         assert_equal 1, rows.count, "#{agent_slug}/#{account} saw #{rows.count} proposals"
         assert_equal "proposed for #{agent_slug}/#{account}", rows.sole.payload["note"]
       end
+    end
+
+    test "one idempotency key proposed from every cell stages four proposals, not one" do
+      # The dedupe lookup is a read path like any other and must not cross either
+      # dimension. A host that derives its key from a domain id —
+      # "plan-change-#{order_id}" — proposes the same key from more than one cell
+      # as a matter of course; a global lookup hands the later callers the first
+      # cell's row and never stages their action at all, so a human never sees it.
+      Concierge.configure { |c| c.agent(:csm) { authority { action "record.update", :human_approval } } }
+
+      staged = @grid.to_h do |cell, scope|
+        agent_slug, account = cell
+        [ cell, Concierge::Proposal.propose(
+          scope, action_class: "record.update", idempotency_key: "plan-change-4471",
+                 payload: { "note" => "for #{agent_slug}/#{account}" }
+        ) ]
+      end
+
+      assert_equal 4, staged.values.map(&:id).uniq.size,
+                   "a colliding idempotency key deduped across the grid"
+      @grid.each do |cell, scope|
+        rows = Concierge::AgentProposal.for_scope(scope)
+
+        assert_equal 1, rows.count, "#{cell.inspect} saw #{rows.count} proposals"
+        assert_equal staged[cell].id, rows.sole.id,
+                     "#{cell.inspect} was handed another cell's proposal"
+        assert_equal "for #{cell.first}/#{cell.last}", rows.sole.payload["note"]
+      end
+    end
+
+    test "idempotency still holds inside a cell, where the key actually means something" do
+      Concierge.configure { |c| c.agent(:csm) { authority { action "record.update", :human_approval } } }
+      scope = @grid[[ :csm, :acme ]]
+
+      first  = Concierge::Proposal.propose(scope, action_class: "record.update",
+                                                  idempotency_key: "plan-change-4471")
+      second = Concierge::Proposal.propose(scope, action_class: "record.update",
+                                                  idempotency_key: "plan-change-4471")
+
+      assert_equal first.id, second.id
+      assert_equal 1, Concierge::AgentProposal.count
     end
 
     test "approving one cell's proposal executes into that cell and no other" do

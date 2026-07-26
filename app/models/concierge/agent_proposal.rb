@@ -18,7 +18,11 @@ module Concierge
   #    call that skips the row; Proposal::Execute reads an +approved+ row.
   # 3. **Mutually-exclusive outcomes.** A proposal was approved or rejected,
   #    never both — and a rejection carries a reason.
-  # 4. **Exactly-once execution**, per +idempotency_key+.
+  # 4. **Exactly-once execution**, per +idempotency_key+ — and the key, like every
+  #    other key on this table, is unique *within* its (Agent × Subject) pair
+  #    rather than globally. Two cells that happen to derive the same key from the
+  #    same domain id are two proposals, not one; deduping them together would
+  #    hand one cell the other's row (§10.12).
   #
   # The lifecycle lives in Concierge::Proposal and Concierge::ApprovalIntake, not
   # here: the gate, the maker-checker refusal and the precondition re-validation
@@ -45,7 +49,8 @@ module Concierge
     validates :action_class, presence: true
     validates :state, inclusion: { in: STATES }
     validates :gate,  inclusion: { in: GATES }
-    validates :idempotency_key, presence: true, uniqueness: true
+    validates :idempotency_key, presence: true,
+                                uniqueness: { scope: %i[agent_slug subject_type subject_id] }
     validate  :maker_is_not_the_checker
     validate  :outcomes_are_mutually_exclusive
     validate  :rejection_carries_a_reason

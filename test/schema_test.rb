@@ -65,6 +65,33 @@ module Concierge
       refute Concierge::Conversation.new(**csm.key, grain: "account", chat_id: 3).valid?
     end
 
+    test "a proposal's idempotency key is unique within its pair, not table-wide" do
+      # Exactly-once execution (§10.6) is enforced on the row — Execute claims it
+      # with a conditional UPDATE — so a table-wide unique index buys nothing and
+      # costs the invariant: it makes one cell's key collide with another's.
+      index = Concierge::AgentProposal.connection
+                                      .indexes("concierge_agent_proposals")
+                                      .find { |i| i.columns.include?("idempotency_key") }
+
+      assert index, "the idempotency key lost its unique index"
+      assert index.unique
+      assert_equal %w[agent_slug subject_type subject_id idempotency_key], index.columns
+    end
+
+    test "the proposal uniqueness validation moved with that index too" do
+      Concierge::Test.configure_agents!
+      subject = Concierge.config.account.build(Tenant.create!(name: "Acme", plan: "pro"))
+      csm     = Concierge::Scope.new(Concierge.config.agent(:csm), subject)
+      billing = Concierge::Scope.new(Concierge.config.agent(:billing), subject)
+      row     = { action_class: "record.update", gate: "human_approval", idempotency_key: "order-9" }
+
+      Concierge::AgentProposal.create!(**csm.key, **row)
+
+      assert Concierge::AgentProposal.new(**billing.key, **row).valid?,
+             "another agent's proposal was refused for reusing a key"
+      refute Concierge::AgentProposal.new(**csm.key, **row).valid?
+    end
+
     test "only agent_rules may leave the subject half of the key blank" do
       # A rule can be agent-wide or segment-wide (§10.2), so its subject keys are
       # nullable — and it is the *only* table where that is true. Everything else
