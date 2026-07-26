@@ -65,6 +65,35 @@ module Concierge
       assert_equal 1, Conversation.for_subject(@subject).count
     end
 
+    # Regression: the degrade above is only as good as the gate that fires it, and
+    # the gate asks ProviderCredentials, which answers through the model id. On a
+    # real Rails host (acts_as_model) RubyLLM prefers the host's `models` table
+    # the moment it has a row, and that table holds only the models the host has
+    # already talked to — so the gate's lookup started failing, "unknown model"
+    # was read as "credentials are fine", and the degrade stopped firing. This
+    # host has no key and a model its own table has never heard of; it must still
+    # degrade, and it must not raise RubyLLM::ModelNotFoundError out of a
+    # before_save on the way — which is exactly what it did.
+    #
+    # default_provider is nil deliberately. It is a documented, supported setting
+    # ("leave nil to let RubyLLM resolve the model normally"), and it is what puts
+    # the whole gate on the model lookup: a host that names its provider is asked
+    # about that provider directly and never reached this. So the bug was invisible
+    # to every test in this suite, all of which inherit the dummy's :anthropic.
+    test "the degrade still fires when the host's registry is partial" do
+      Concierge.config.default_provider = nil
+
+      with_partial_model_registry("gpt-4.1-nano" => "openai") do
+        without_provider_credentials do
+          assert_nothing_raised { ChatResolver.call(@subject) }
+          assert_nil ChatResolver.call(@subject)
+        end
+      end
+
+      assert_equal 0, Conversation.for_subject(@subject).count,
+                   "a conversation was recorded pointing at a Chat that was never created"
+    end
+
     # An existing conversation predates the credentials going away, so it still
     # resolves — losing the key must not orphan history a host already has.
     test "an already-persisted conversation still resolves without credentials" do
