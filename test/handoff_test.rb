@@ -35,5 +35,18 @@ module Concierge
       b = Handoff.seize!(@subject, operator: "sam")
       assert_equal a.id, b.id
     end
+
+    test "a takeover with nobody's name on it is refused" do
+      # The customer is told "<operator> has taken this conversation over", so an
+      # anonymous takeover is not renderable. The engine's endpoint refuses before
+      # it reaches here; this is the same refusal for a host calling seize! itself.
+      [ nil, "", "  " ].each do |nobody|
+        assert_raises(ActiveRecord::RecordInvalid, "#{nobody.inspect} was recorded as an operator") do
+          Handoff.seize!(@subject, operator: nobody)
+        end
+      end
+
+      assert_equal 0, Handoff.count
+    end
   end
 end

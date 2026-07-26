@@ -7,6 +7,7 @@ require "test_helper"
 # surface Globex's anything.
 class HostIsolationTest < ActionDispatch::IntegrationTest
   include Concierge::Test::HostApp
+  include ActiveJob::TestHelper
 
   setup do
     @globex.changelog_entries.create!(title: "Globex ships SSO", status: "published",
@@ -218,6 +219,49 @@ class HostIsolationTest < ActionDispatch::IntegrationTest
 
     post "/concierge/accounts/#{@acme.id}/handoff/message", params: { body: "Sam from support here." }
     assert_response :ok
+  end
+
+  test "an operator cannot seize a thread as somebody else" do
+    # The third boundary on this seam, and the one the gate does not hold: not
+    # between two accounts, and not between the customer and staff, but between
+    # one staff identity and another. Support passes `authorize_operator` — and
+    # the name on the takeover used to be whatever the request said, so Support
+    # could seize Dana's thread as the CEO and Dana's account page would tell her
+    # the CEO had. The name now comes off the session the gate just vouched for.
+    sign_in_as_operator
+
+    post "/concierge/accounts/#{@acme.id}/handoff", params: { operator: "ceo@acme.test" }
+    assert_response :created
+    assert_equal Operator::EMAIL, Concierge::Handoff.active_for(csm_scope(@acme))&.operator,
+                 "an operator named somebody else as the operator of record"
+
+    # ...and the customer is shown who it actually was. (Literal paths: the
+    # request above went into the mounted engine — see Concierge::Test::HostApp.)
+    post "/signin", params: { user_id: @dana.id }
+    get "/account"
+    assert_response :success
+    assert_includes response.body, "#{Operator::EMAIL} has taken this conversation over"
+    assert_not_includes response.body, "ceo@acme.test"
+  end
+
+  test "an operator cannot author another operator's correction either" do
+    # The same forgery one door along: what an operator sends is captured as
+    # pinned human memory and may be generalized into a proposed rule, which
+    # records who corrected the agent. That attribution is the session's too.
+    sign_in_as_operator
+
+    post "/concierge/accounts/#{@acme.id}/handoff", params: { operator: "ceo@acme.test" }
+    assert_response :created
+
+    perform_enqueued_jobs do
+      post "/concierge/accounts/#{@acme.id}/handoff/message",
+           params: { operator: "ceo@acme.test",
+                     body: "Never quote a delivery date without checking with support." }
+    end
+    assert_response :ok
+
+    rule = Concierge::AgentRule.sole
+    assert_equal Operator::EMAIL, rule.provenance["corrected_by"]
   end
 
   test "an operator session is not a customer session" do

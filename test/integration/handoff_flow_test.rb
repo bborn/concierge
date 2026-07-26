@@ -10,12 +10,15 @@ class HandoffFlowTest < ActionDispatch::IntegrationTest
     # asserted in test/integration/operator_authorization_test.rb and
     # test/integration/host_isolation_test.rb. Here the subject is the takeover.
     Concierge::Test.authorize_all_operators!
+    # ...and who they are, which is a second hook and a second refusal: the
+    # takeover records a name and the product shows it to the customer.
+    Concierge::Test.name_all_operators!
   end
 
   test "an operator can seize, send as human, and release a thread over HTTP" do
-    post "/concierge/accounts/#{@tenant.id}/handoff", params: { operator: "sam" }
+    post "/concierge/accounts/#{@tenant.id}/handoff"
     assert_response :created
-    assert Concierge::Handoff.active_for(@subject)
+    assert_equal "sam@acme.test", Concierge::Handoff.active_for(@subject).operator
 
     post "/concierge/accounts/#{@tenant.id}/handoff/message", params: { body: "Hi, this is Sam from support." }
     assert_response :ok
@@ -31,7 +34,7 @@ class HandoffFlowTest < ActionDispatch::IntegrationTest
     billing = Concierge::Scope.new(Concierge.config.agent(:billing), @subject)
     csm     = Concierge::Scope.new(Concierge.config.agent(:csm), @subject)
 
-    post "/concierge/accounts/#{@tenant.id}/handoff", params: { operator: "sam", agent: "billing" }
+    post "/concierge/accounts/#{@tenant.id}/handoff", params: { agent: "billing" }
     assert_response :created
 
     assert Concierge::Handoff.active_for(billing)

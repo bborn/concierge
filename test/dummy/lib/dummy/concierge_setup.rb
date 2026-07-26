@@ -94,6 +94,16 @@ module Dummy
       # which is why the hook is handed the Scope and not just the controller.
       # This demo has one book with every account in it, so it does not.
       c.authorize_operator = ->(controller, _scope) { Operator.signed_in?(controller.session) }
+
+      # ...and who that operator *is*. The engine records this on the takeover and
+      # the product shows it to the customer ("support@acme.test has taken this
+      # conversation over"), so it comes off the staff session the hook above just
+      # vouched for. It used to come from the request, which meant Support could
+      # seize Dana's thread under the CEO's name and Dana would be told so.
+      #
+      # A real host returns the signed-in staff member's email; this demo has one
+      # seat, so the session holds it directly.
+      c.operator_actor = ->(controller, _scope) { Operator.email(controller.session) }
     end
 
     def rules(c)

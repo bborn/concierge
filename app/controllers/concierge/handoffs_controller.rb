@@ -17,18 +17,26 @@ module Concierge
   # Sharing it let a signed-in customer seize their own thread and message
   # themselves as support. Two questions, two hooks, and the second does not
   # inherit an answer to the first (see Concierge::ScopedEndpoint).
+  #
+  # A third question, +config.operator_actor+, answers *who* is acting. It used
+  # to be +params[:operator]+: the caller named themselves, so a staff member who
+  # had passed the gate could seize a thread as a colleague or as the CEO, and
+  # the customer would be told that name. The operator of record is now the
+  # host's answer, and the request parameter is not read at all.
   class HandoffsController < ApplicationController
     include ScopedEndpoint
 
     authorize_with :operator
 
     def create
-      Handoff.seize!(scope, operator: params[:operator])
+      Handoff.seize!(scope, operator: operator)
       head :created
     end
 
     def message
-      Learning.capture(scope, content: params[:body])
+      # The same identity authors the capture: a correction that becomes a
+      # proposed rule carries who made it, exactly as the Slack intake does.
+      Learning.capture(scope, content: params[:body], author: operator)
       Concierge::Channel::InApp.new(subject: scope.subject).deliver(body: params[:body])
       head :ok
     end
