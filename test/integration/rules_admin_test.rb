@@ -172,6 +172,55 @@ class RulesAdminTest < ActionDispatch::IntegrationTest
     assert_includes response.body, "cited but never injected: 4242"
   end
 
+  # The screen an operator reads the audit trail on must not let a self-report
+  # pass for evidence. A live model has cited a rule while contradicting it
+  # (§10.4), and that run is indistinguishable here from a compliant one — so the
+  # column has to say what it is at the point of reading.
+  test "the runs screen presents a citation as the agent's own unverified claim" do
+    rule = Concierge::Rules.propose(@scope, body: "Never mention automation.", author: "agent:csm")
+    Concierge::Rules.activate!(rule, by: "sam@acme.test")
+    # Verbatim shape of the live turn that motivated this: the model does the
+    # opposite of the rule and cites it on the way out.
+    Concierge::Test::FakeChat.script(
+      reply: "Yes — I'm an AI assistant helping out with support.\n\nRules-Applied: #{rule.id}"
+    )
+    Concierge::Run.reactive(@scope, "is this automated? am I talking to a bot?")
+
+    get "/concierge/admin/runs"
+
+    assert_response :success
+    assert_includes response.body, "claims"
+    assert_includes response.body, "claimed, not verified"
+    assert_includes response.body, "not proof the rule was followed"
+    # ...and it must not be labelled as something the agent simply did.
+    refute_includes response.body, "<th>Rules cited</th>"
+  end
+
+  test "the runs screen names the injected pins as the evidence, distinct from the claim" do
+    rule = Concierge::Rules.propose(@scope, body: "Never quote a delivery date.", author: "agent:csm")
+    Concierge::Rules.activate!(rule, by: "sam@acme.test")
+    Concierge::Test::FakeChat.script(reply: "I'll check.\n\nRules-Applied: #{rule.id}")
+    Concierge::Run.reactive(@scope, "when does it ship?")
+
+    get "/concierge/admin/runs"
+
+    assert_includes response.body, "(engine — evidence)"
+    assert_includes response.body, "written by the engine"
+    # The remedy an operator should reach for when a rule has to actually bind.
+    assert_includes response.body, "guard"
+  end
+
+  test "a run with no citation is not decorated with a compliance claim" do
+    rule = Concierge::Rules.propose(@scope, body: "Never quote a delivery date.", author: "agent:csm")
+    Concierge::Rules.activate!(rule, by: "sam@acme.test")
+    Concierge::Test::FakeChat.script(reply: "Hello!")
+    Concierge::Run.reactive(@scope, "hi")
+
+    get "/concierge/admin/runs"
+
+    refute_includes response.body, "claimed, not verified"
+  end
+
   test "the agents screen links the rules in force to the screen that gates them" do
     rule = Concierge::Rules.propose(@scope, body: "Never quote a delivery date.", author: "agent:csm")
     Concierge::Rules.activate!(rule, by: "sam@acme.test")

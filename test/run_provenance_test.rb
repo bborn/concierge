@@ -192,6 +192,30 @@ module Concierge
       assert_equal "Hello!", result.reply_text
     end
 
+    # Characterization, not a regression guard: this documents a limit of the
+    # design rather than asserting a fix. A live model was observed answering
+    # "yes — I'm an AI assistant" to a rule saying never to mention automation,
+    # and citing that rule (§10.4). The engine cannot detect that — it never sees
+    # the rule's meaning, only its id coming back — so the row it writes is
+    # identical to a genuinely compliant turn's. That is precisely why nothing
+    # downstream may render a citation as compliance.
+    test "a reply that contradicts the cited rule records as a clean citation" do
+      rule = activate(@csm, "Keep the tone low-key and never mention automation.")
+      Concierge::Test::FakeChat.script(
+        reply: "Yes — I'm an AI assistant helping out with support.\n\nRules-Applied: #{rule.id}"
+      )
+
+      result = Concierge::Run.reactive(@csm, "is this automated? am I talking to a bot?")
+      run    = result.run_record
+
+      assert_equal [ rule.id ], run.rule_ids_applied
+      assert_empty run.unknown_rule_ids
+      refute run.unknown_citations?
+      # ...and the pins — the half that *is* evidence — still say what it was told.
+      assert_equal [ rule.id ], run.injected_rule_ids
+      assert_includes run.injected_rule_texts.first, "never mention automation"
+    end
+
     test "a reply with no citation line claims nothing and is left alone" do
       activate(@csm, "Never quote a delivery date.")
       Concierge::Test::FakeChat.script(reply: "Hello!")

@@ -8,12 +8,26 @@
   &ldquo;here is the policy that was in the prompt.&rdquo;
 </p>
 
+<p>
+  The last two columns are <strong>not the same kind of thing.</strong>
+  <em>Rules injected</em> is written by the engine from the rule set it rendered
+  into the prompt: it is evidence of what the agent was told.
+  <em>Rules the agent claims it applied</em> is a line the model wrote in its own
+  reply — an <strong>unverified self-report, not proof the rule was followed.</strong>
+  A model has been observed contradicting a rule while citing it, and that turn
+  records exactly like a compliant one. Read a citation as &ldquo;the rule reached
+  the model&rsquo;s attention,&rdquo; never as &ldquo;the rule held.&rdquo; Policy
+  that has to hold belongs in a <code>guard</code> rule, which the engine checks
+  itself.
+</p>
+
 <table>
   <thead>
     <tr>
       <th>When</th><th>Agent</th><th>Account</th><th>Trigger</th><th>Status</th>
       <th>Model</th><th>Tokens</th><th>Snapshot</th><th>Memories</th>
-      <th>Rules injected</th><th>Rules cited</th>
+      <th>Rules injected <small>(engine — evidence)</small></th>
+      <th>Rules the agent <em>claims</em> it applied <small>(unverified)</small></th>
     </tr>
   </thead>
   <tbody>
@@ -40,7 +54,12 @@
           <% end %>
         </td>
         <td>
-          <%= run.rule_ids_applied.any? ? run.rule_ids_applied.join(", ") : "—" %>
+          <% if run.rule_ids_applied.any? %>
+            <%= run.rule_ids_applied.join(", ") %>
+            <br><small>claimed, not verified</small>
+          <% else %>
+            —
+          <% end %>
           <% if run.unknown_citations? %>
             <br><strong>cited but never injected: <%= run.unknown_rule_ids.join(", ") %></strong>
           <% end %>

@@ -54,10 +54,11 @@
       </dd>
 
       <% if proposal.rule_ids_applied.any? %>
-        <dt>Rules applied</dt>
+        <dt>Rules claimed</dt>
         <dd>
-          the agent said it applied
+          the agent says it applied
           <%= link_to proposal.rule_ids_applied.map { |id| "##{id}" }.join(", "), admin_rules_path %>
+          — its own unverified claim, not proof it followed them
         </dd>
       <% end %>
 

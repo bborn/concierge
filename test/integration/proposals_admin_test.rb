@@ -36,6 +36,23 @@ class ProposalsAdminTest < ActionDispatch::IntegrationTest
     assert_includes response.body, "Approve"
   end
 
+  # The approver is being asked to trust a draft. Telling them the agent
+  # "applied" rule #7 invites them to read the draft as pre-checked; a model can
+  # cite a rule while contradicting it (§10.4), so the card says whose claim it is.
+  test "a card marks the cited rules as the agent's unverified claim" do
+    Concierge::Outreach.deliver(
+      Concierge::Result.new(reply_text: "your card expires soon", rule_ids_applied: [ 7 ]),
+      @billing, channel: :in_app
+    )
+
+    get "/concierge/admin/proposals"
+
+    assert_response :success
+    assert_includes response.body, "Rules claimed"
+    assert_includes response.body, "not proof it followed them"
+    refute_includes response.body, "<dt>Rules applied</dt>"
+  end
+
   test "an operator approves a message and the engine sends it" do
     proposal = staged_message
 
