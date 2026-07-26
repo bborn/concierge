@@ -1,0 +1,85 @@
+{
+  "proposal": {
+    "id": 6,
+    "agent": "billing",
+    "action_class": "record.plan_change",
+    "payload": {
+      "from": "enterprise",
+      "to": "pro",
+      "reason": "procurement asked to drop a tier at renewal"
+    },
+    "approved_by": "dana@acme.test",
+    "executed_by": "dana@acme.test",
+    "executed_at": "2026-07-26 04:39:46 UTC"
+  },
+  "1_chat.update_in_the_request": {
+    "text": "Proposal approved — billing · record.plan_change (proposal #6)",
+    "blocks": [
+      {
+        "type": "header",
+        "text": {
+          "type": "plain_text",
+          "text": "Proposal approved: record.plan_change"
+        }
+      },
+      {
+        "type": "section",
+        "text": {
+          "type": "mrkdwn",
+          "text": "*billing* on *account #5*\n• *from*: enterprise\n• *to*: pro\n• *reason*: procurement asked to drop a tier at renewal"
+        }
+      },
+      {
+        "type": "section",
+        "text": {
+          "type": "mrkdwn",
+          "text": ":hourglass: *Approved* by dana@acme.test at 2026-07-26 04:39:46 UTC — queued to be performed — this card updates when it is"
+        }
+      },
+      {
+        "type": "context",
+        "elements": [
+          {
+            "type": "mrkdwn",
+            "text": "Slack is the remote control; the record is `/concierge/admin/proposals` — proposal #6."
+          }
+        ]
+      }
+    ]
+  },
+  "2_chat.update_from_the_job": {
+    "text": "Proposal executed — billing · record.plan_change (proposal #6)",
+    "blocks": [
+      {
+        "type": "header",
+        "text": {
+          "type": "plain_text",
+          "text": "Proposal executed: record.plan_change"
+        }
+      },
+      {
+        "type": "section",
+        "text": {
+          "type": "mrkdwn",
+          "text": "*billing* on *account #5*\n• *from*: enterprise\n• *to*: pro\n• *reason*: procurement asked to drop a tier at renewal"
+        }
+      },
+      {
+        "type": "section",
+        "text": {
+          "type": "mrkdwn",
+          "text": ":white_check_mark: *Executed* at 2026-07-26 04:39:46 UTC by dana@acme.test\nApproved by dana@acme.test"
+        }
+      },
+      {
+        "type": "context",
+        "elements": [
+          {
+            "type": "mrkdwn",
+            "text": "Slack is the remote control; the record is `/concierge/admin/proposals` — proposal #6."
+          }
+        ]
+      }
+    ]
+  }
+}

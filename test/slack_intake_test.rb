@@ -1,9 +1,13 @@
 require "test_helper"
+require "benchmark"
 
 module Concierge
-  # The inbound half of §10.7, and the handler order §2.6 specifies:
+  # The inbound half of §10.7, and the handler order §2.6 specifies — now split
+  # across the request boundary, because Slack gives this endpoint about three
+  # seconds and a host executor cannot promise to meet it:
   #
-  #   signed payload -> write the decision to the proposal row -> execute -> update the card
+  #   in the request: signed payload -> write the decision -> queue the execution -> update the card
+  #   in the job:     execute -> update the card again
   #
   # Every test here goes through Concierge::ApprovalIntake, because a Slack button
   # and the admin form must earn identical refusals. The transport records the state
@@ -11,6 +15,11 @@ module Concierge
   # than assumed.
   class SlackIntakeTest < ActiveSupport::TestCase
     include ActiveJob::TestHelper
+
+    # Long enough that half of it is still far more than the handler's real work,
+    # short enough not to matter to the suite. Stands in for the host executor
+    # this bug was filed about: a payment provider, an external API.
+    SLOW_EXECUTOR = 0.75
 
     setup do
       Concierge::Test.configure_agents!
@@ -30,29 +39,79 @@ module Concierge
 
     # --- approve --------------------------------------------------------------
 
-    test "Approve writes the decision, executes it, and only then updates the card" do
+    test "Approve writes the decision synchronously and hands the execution to a job" do
+      row = propose
+
+      result = nil
+      assert_enqueued_with(job: Concierge::ProposalExecutionJob) do
+        result = Concierge::Slack::Intake.handle(click(Concierge::Slack::Card::APPROVE, row))
+      end
+
+      # The decision is the record, so it is durable before Slack is answered...
+      assert_equal :ok, result.status
+      row.reload
+      assert_equal "approved", row.state
+      assert_equal "slack:U9", row.approved_by
+      assert row.approved_at.present?
+      # ...and the *doing* has not happened inside the request.
+      assert_equal "pro", @tenant.reload.plan, "the executor ran inside the Slack request"
+    end
+
+    test "a slow host executor cannot blow Slack's three-second interactivity budget" do
+      # The defect this split exists for: with Proposal::Execute inline, the whole
+      # of a slow executor landed inside POST /concierge/slack/interactions, and
+      # Slack showed the operator an error for a decision that had actually landed.
+      slow_executor!
+      row = propose
+
+      elapsed = Benchmark.realtime do
+        Concierge::Slack::Intake.handle(click(Concierge::Slack::Card::APPROVE, row))
+      end
+
+      assert_operator elapsed, :<, SLOW_EXECUTOR / 2,
+                      "the handler waited #{elapsed.round(3)}s for the executor; Slack allows ~3s"
+      assert_equal "approved", row.reload.state
+
+      perform_enqueued_jobs
+      assert_equal "executed", row.reload.state
+      assert_equal "enterprise", @tenant.reload.plan
+    end
+
+    test "the queued job executes it, and only then does the card say it happened" do
       row = propose
 
       Concierge::Slack::Intake.handle(click(Concierge::Slack::Card::APPROVE, row))
 
+      # The card the operator sees immediately says the decision landed and says,
+      # truthfully, that nothing has been performed yet.
+      queued = @transport.last("chat.update")
+      assert queued, "the card was never updated"
+      assert_equal "approved", queued.proposal_states[row.id][:state]
+      refute queued.proposal_states[row.id][:executed]
+      assert_match "queued to be performed", JSON.generate(queued.payload[:blocks])
+      refute_match "concierge_approve", JSON.generate(queued.payload[:blocks]),
+                   "a queued card still offered a button a second person could click"
+
+      perform_enqueued_jobs
+
       row.reload
       assert_equal "executed", row.state
-      assert_equal "slack:U9", row.approved_by
-      assert row.approved_at.present?
+      assert_equal "slack:U9", row.executed_by
       assert_equal "enterprise", @tenant.reload.plan
 
-      # The ordering, asserted: by the time chat.update ran, the row was already
-      # decided *and* performed. A card that updated first would be a message
-      # claiming an approval the database had not recorded.
-      update = @transport.last("chat.update")
-      assert update, "the card was never updated"
-      assert_equal "executed", update.proposal_states[row.id][:state]
-      assert update.proposal_states[row.id][:executed]
+      # The ordering, asserted: by the time the second chat.update ran, the row was
+      # already performed. A card that updated first would claim an execution the
+      # database had not recorded.
+      final = @transport.last("chat.update")
+      refute_equal queued.object_id, final.object_id, "the card was never redrawn after the executor ran"
+      assert_equal "executed", final.proposal_states[row.id][:state]
+      assert final.proposal_states[row.id][:executed]
     end
 
     test "the updated card carries who, when and what — and no buttons" do
       row = propose
       Concierge::Slack::Intake.handle(click(Concierge::Slack::Card::APPROVE, row))
+      perform_enqueued_jobs
 
       update = @transport.last("chat.update")
       assert_equal "C0BILLING", update.payload[:channel]
@@ -66,7 +125,10 @@ module Concierge
     test "maker-checker refuses the proposer's own click and leaves the row alone" do
       row = propose(created_by: "slack:U9")
 
-      result = Concierge::Slack::Intake.handle(click(Concierge::Slack::Card::APPROVE, row))
+      result = nil
+      assert_no_enqueued_jobs only: Concierge::ProposalExecutionJob do
+        result = Concierge::Slack::Intake.handle(click(Concierge::Slack::Card::APPROVE, row))
+      end
 
       assert_equal :refused, result.status
       assert_equal "proposed", row.reload.state
@@ -80,7 +142,10 @@ module Concierge
       @transport = Concierge::Test.configure_slack!(actor_for: ->(_user) { nil })
       row = propose
 
-      result = Concierge::Slack::Intake.handle(click(Concierge::Slack::Card::APPROVE, row, user: {}))
+      result = nil
+      assert_no_enqueued_jobs only: Concierge::ProposalExecutionJob do
+        result = Concierge::Slack::Intake.handle(click(Concierge::Slack::Card::APPROVE, row, user: {}))
+      end
 
       assert_equal :refused, result.status
       assert_equal "proposed", row.reload.state
@@ -96,11 +161,13 @@ module Concierge
 
     test "a decision survives a card update that fails" do
       # Postgres is the record. A stale card with a correct row is recoverable; the
-      # reverse is a decision that exists only in a chat message.
+      # reverse is a decision that exists only in a chat message. The split does not
+      # change that — it just gives the card two chances to fail instead of one.
       row = propose
       @transport.fail_with = Concierge::Slack::ApiError.new("message_not_found")
 
       Concierge::Slack::Intake.handle(click(Concierge::Slack::Card::APPROVE, row))
+      perform_enqueued_jobs
 
       assert_equal "executed", row.reload.state
       assert_equal "enterprise", @tenant.reload.plan
@@ -111,22 +178,48 @@ module Concierge
       # The world moved between the draft and the click.
       @tenant.update!(plan: "starter")
 
-      result = Concierge::Slack::Intake.handle(click(Concierge::Slack::Card::APPROVE, row))
+      # The click itself succeeds — the decision landed, and that is all it claims.
+      assert_equal :ok, Concierge::Slack::Intake.handle(click(Concierge::Slack::Card::APPROVE, row)).status
+      perform_enqueued_jobs
 
-      assert_equal :refused, result.status
       assert_equal "approved", row.reload.state
+      # The refusal still reaches the person who clicked, from the job that found
+      # it out. Deferring execution may not lose a refusal.
       assert_match(/approved but not performed/, @transport.last("chat.postEphemeral").payload[:text])
+      assert_equal "U9", @transport.last("chat.postEphemeral").payload[:user]
       assert_match(/state this proposal assumed has changed/, row.execution_error)
+      # ...and the card says so too, rather than staying on "queued" forever.
+      assert_match "not performed", JSON.generate(@transport.last("chat.update").payload[:blocks])
       # ...and it is exactly where step 3 put it: approved, unperformed, visible.
       assert_includes Concierge::AgentProposal.unexecuted.map(&:id), row.id
+    end
+
+    test "the job re-checks the gate at the moment it runs, not at the moment of the click" do
+      # Deferring execution moves the six refusals of Proposal::Execute later,
+      # which makes them *more* current, not less: an ops halt between the click
+      # and the job still stops the work, which is the point of a kill switch.
+      row = propose
+      Concierge::Slack::Intake.handle(click(Concierge::Slack::Card::APPROVE, row))
+
+      Concierge.configure { |c| c.agent(:billing) { enabled false } }
+
+      perform_enqueued_jobs
+
+      assert_equal "approved", row.reload.state
+      assert_equal "pro", @tenant.reload.plan, "a disabled agent still performed approved work"
     end
 
     test "a human_execution proposal is approved but never executed by the engine" do
       row = propose(action_class: "money.refund", gate: "human_execution", key: "refund-1",
                     payload: { "amount_cents" => "2500" })
 
-      Concierge::Slack::Intake.handle(click(Concierge::Slack::Card::APPROVE, row))
+      # Nothing is queued: there is nothing for the engine to perform, and a job
+      # that ran would only produce a refusal nobody needed to read.
+      assert_no_enqueued_jobs only: Concierge::ProposalExecutionJob do
+        Concierge::Slack::Intake.handle(click(Concierge::Slack::Card::APPROVE, row))
+      end
       assert_equal "approved", row.reload.state
+      assert_match "you do", JSON.generate(@transport.last("chat.update").payload[:blocks])
 
       Concierge::Slack::Intake.handle(click(Concierge::Slack::Card::MARK_EXECUTED, row))
       assert_equal "executed", row.reload.state
@@ -143,12 +236,13 @@ module Concierge
       Concierge::Rules.activate!(rule, by: "sam@acme.test")
       row = propose
 
-      result = Concierge::Slack::Intake.handle(click(Concierge::Slack::Card::APPROVE, row))
+      Concierge::Slack::Intake.handle(click(Concierge::Slack::Card::APPROVE, row))
+      perform_enqueued_jobs
 
-      assert_equal :refused, result.status
       assert_equal "approved", row.reload.state
       assert_match "blocked by guard rule", row.execution_error
       assert_equal "pro", @tenant.reload.plan
+      assert_match(/approved but not performed/, @transport.last("chat.postEphemeral").payload[:text])
     end
 
     # --- reject ---------------------------------------------------------------
@@ -166,10 +260,14 @@ module Concierge
     test "submitting the reject modal records the reason on the row" do
       row = propose
 
-      Concierge::Slack::Intake.handle(
-        submit(Concierge::Slack::Card::REJECT_MODAL, row,
-               Concierge::Slack::Card::REASON_BLOCK => "wrong account")
-      )
+      # A rejection has nothing to perform, so it queues nothing — the split only
+      # touches the decisions that leave an executor something to do.
+      assert_no_enqueued_jobs only: Concierge::ProposalExecutionJob do
+        Concierge::Slack::Intake.handle(
+          submit(Concierge::Slack::Card::REJECT_MODAL, row,
+                 Concierge::Slack::Card::REASON_BLOCK => "wrong account")
+        )
+      end
 
       row.reload
       assert_equal "rejected", row.state
@@ -208,11 +306,17 @@ module Concierge
     test "Correct edits the payload, keeps the original, and approves the edit" do
       row = propose
 
-      Concierge::Slack::Intake.handle(
-        submit(Concierge::Slack::Card::CORRECT_MODAL, row,
-               "#{Concierge::Slack::Card::PAYLOAD_PREFIX}from" => "pro",
-               "#{Concierge::Slack::Card::PAYLOAD_PREFIX}to"   => "starter")
-      )
+      # A correction is an approval, so it defers the same way: the modal closes
+      # inside Slack's budget and the executor runs after it.
+      assert_enqueued_with(job: Concierge::ProposalExecutionJob) do
+        Concierge::Slack::Intake.handle(
+          submit(Concierge::Slack::Card::CORRECT_MODAL, row,
+                 "#{Concierge::Slack::Card::PAYLOAD_PREFIX}from" => "pro",
+                 "#{Concierge::Slack::Card::PAYLOAD_PREFIX}to"   => "starter")
+        )
+      end
+      assert_equal "approved", row.reload.state
+      perform_enqueued_jobs
 
       row.reload
       assert_equal "starter", row.payload["to"]
@@ -317,6 +421,19 @@ module Concierge
     end
 
     private
+
+    # The host executor this bug was filed about: one that takes longer than Slack
+    # is willing to wait.
+    def slow_executor!
+      Concierge.configure do |c|
+        c.proposals do
+          execute("record.plan_change") do |proposal, scope|
+            sleep SLOW_EXECUTOR
+            scope.subject.to_model.update!(plan: proposal.action_arguments[:to])
+          end
+        end
+      end
+    end
 
     def propose(action_class: "record.plan_change", gate: nil, key: nil, created_by: nil,
                 payload: { "from" => "pro", "to" => "enterprise" })

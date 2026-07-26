@@ -1,4 +1,5 @@
 require "test_helper"
+require "benchmark"
 
 # The two endpoints a real Slack app needs (design §10.7), over real HTTP with real
 # signatures. The signature is *not* stubbed out anywhere in this file: an endpoint
@@ -6,6 +7,11 @@ require "test_helper"
 # it would be the crutch that hides a missing check.
 class SlackEndpointsTest < ActionDispatch::IntegrationTest
   include Concierge::Test::SlackRequests
+  include ActiveJob::TestHelper
+
+  # Stands in for the host executor this split exists for — a payment provider, an
+  # external API. Long enough that half of it still dwarfs the endpoint's real work.
+  SLOW_EXECUTOR = 0.75
 
   setup do
     Concierge::Test.configure_agents!
@@ -66,17 +72,49 @@ class SlackEndpointsTest < ActionDispatch::IntegrationTest
     assert_equal "proposed", proposal.reload.state
   end
 
-  test "a signed Approve click decides the proposal and executes it" do
+  test "a signed Approve click decides the proposal and queues the execution" do
     proposal = propose
     body = "payload=#{CGI.escape(interaction_body(proposal))}"
 
-    post "/concierge/slack/interactions", params: body, headers: slack_form_headers(body)
+    assert_enqueued_with(job: Concierge::ProposalExecutionJob) do
+      post "/concierge/slack/interactions", params: body, headers: slack_form_headers(body)
+    end
 
     assert_response :success
     proposal.reload
-    assert_equal "executed", proposal.state
+    assert_equal "approved", proposal.state
     assert_equal "slack:U77", proposal.approved_by
+    assert_equal "pro", @tenant.reload.plan, "the executor ran inside the Slack request"
+
+    perform_enqueued_jobs
+    assert_equal "executed", proposal.reload.state
     assert_equal "enterprise", @tenant.reload.plan
+  end
+
+  test "the endpoint answers Slack well inside its budget even with a slow executor" do
+    # The whole reason execution moved off this request (task #4999): Slack shows
+    # the operator an error past ~3s, for a decision that in fact landed.
+    Concierge.configure do |c|
+      c.proposals do
+        execute("record.plan_change") do |proposal, scope|
+          sleep SLOW_EXECUTOR
+          scope.subject.to_model.update!(plan: proposal.action_arguments[:to])
+        end
+      end
+    end
+    proposal = propose
+    body = "payload=#{CGI.escape(interaction_body(proposal))}"
+
+    elapsed = Benchmark.realtime do
+      post "/concierge/slack/interactions", params: body, headers: slack_form_headers(body)
+    end
+
+    assert_response :success
+    assert_operator elapsed, :<, SLOW_EXECUTOR / 2,
+                    "the endpoint took #{elapsed.round(3)}s; Slack allows about three"
+
+    perform_enqueued_jobs
+    assert_equal "executed", proposal.reload.state
   end
 
   test "a modal submission answers Slack with the validation error, not a 500" do
@@ -136,6 +174,7 @@ class SlackEndpointsTest < ActionDispatch::IntegrationTest
       post "/concierge/slack/interactions", params: body, headers: slack_form_headers(body)
 
       assert_response :success
+      perform_enqueued_jobs
       assert_equal "executed", proposal.reload.state
     end
   end

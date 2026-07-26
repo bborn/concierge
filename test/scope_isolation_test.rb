@@ -9,6 +9,8 @@ module Concierge
   # shared one. Every assertion below is "this cell sees itself and nothing else
   # it should not."
   class ScopeIsolationTest < ActiveSupport::TestCase
+    include ActiveJob::TestHelper
+
     setup do
       Concierge::Test.configure_agents!
 
@@ -233,6 +235,43 @@ module Concierge
                    "a billing approval was audited under the CSM"
       assert_equal "proposed", Concierge::AgentProposal.for_scope(globex).sole.state,
                    "approving one cell's proposal decided another's"
+    end
+
+    test "an execution deferred to a job performs into its own cell and no other" do
+      # A Slack approval now hands the *doing* to Concierge::ProposalExecutionJob,
+      # so an execution crosses a process boundary carrying a bare proposal id
+      # (§10.7). The job holds no scope of its own — it re-resolves the (agent,
+      # account) pair from the row — which is what keeps a queue from becoming a
+      # way to point one cell's execution at a neighbour.
+      transport = Concierge::Test.configure_slack!(channels: { billing: "C0BILLING" })
+      acme   = @grid[[ :billing, :acme ]]
+      globex = @grid[[ :billing, :globex ]]
+      [ acme, globex ].each do |scope|
+        Concierge::Outreach.deliver(
+          Concierge::Result.new(reply_text: "note for #{scope.subject.id}"), scope, channel: :in_app
+        )
+      end
+      acme_row = Concierge::AgentProposal.for_scope(acme).sole
+
+      Concierge::Slack::Intake.handle(approve_click(acme_row))
+      # Nothing has been performed yet — that is the point of the split — and the
+      # neighbour has not been touched by the click either.
+      assert_equal "approved", acme_row.reload.state
+      assert_equal 0, Concierge::ChannelDelivery.for_scope(acme).count
+      assert_equal "proposed", Concierge::AgentProposal.for_scope(globex).sole.state
+
+      perform_enqueued_jobs
+
+      assert_equal "executed", acme_row.reload.state
+      assert_equal 1, Concierge::ChannelDelivery.for_scope(acme).count
+      assert_equal 0, Concierge::ChannelDelivery.for_scope(globex).count,
+                   "a queued execution delivered into the neighbouring account"
+      assert_equal 0, Concierge::ChannelDelivery.for_scope(@grid[[ :csm, :acme ]]).count,
+                   "a queued billing execution was audited under the CSM"
+      assert_equal "proposed", Concierge::AgentProposal.for_scope(globex).sole.state,
+                   "a queued execution decided another cell's proposal"
+      # And the card it redrew afterwards went back to its own agent's channel.
+      assert_equal [ "C0BILLING" ], transport.calls_to("chat.update").map { |call| call.payload[:channel] }.uniq
     end
 
     test "a guard rule blocks execution only inside the cell that owns it" do
@@ -571,6 +610,15 @@ module Concierge
 
     def agent(slug)
       Concierge.config.agent(slug)
+    end
+
+    def approve_click(row)
+      card = Concierge::SlackCard.find_by(agent_proposal_id: row.id)
+      {
+        "type" => "block_actions", "user" => { "id" => "U9" }, "trigger_id" => "T1",
+        "container" => { "channel_id" => card&.channel_id, "message_ts" => card&.message_ts },
+        "actions" => [ { "action_id" => Concierge::Slack::Card::APPROVE, "value" => row.id.to_s } ]
+      }
     end
 
     # What +chat.with_tools+ was actually given for this cell — the real path
