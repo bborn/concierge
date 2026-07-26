@@ -138,6 +138,13 @@ module Concierge
 
     def execution_failed? = execution_failed_at.present?
 
+    # A human cleared a failure and handed the retry to an executor that has not
+    # reported back yet (§10.7). Unlike the Slack card's +executing:+ flag — which
+    # only the caller that queued a *first* execution can know — this is on the
+    # row, because a retry destroys the previous failure and every surface looking
+    # at the queue has to be told what replaced it.
+    def execution_retry_queued? = execution_retry_queued_at.present?
+
     private
 
     def stamp_proposed_at

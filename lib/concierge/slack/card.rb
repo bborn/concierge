@@ -250,6 +250,11 @@ module Concierge
         # Deliberately not "executing" or "done in a moment": what is true is that
         # it is queued. If nothing ever runs the queue, this card has said so.
         return "queued to be performed — this card updates when it is" if @executing
+        # The same sentence for a retry, except this one is read off the row. A
+        # retry cleared the failure that used to be printed above, so a card that
+        # redrew for any other reason would otherwise go quiet about a proposal it
+        # had just been shouting about.
+        return "a retry is queued — this card updates when it is performed" if proposal.execution_retry_queued?
 
         "not performed yet"
       end

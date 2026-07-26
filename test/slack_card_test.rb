@@ -77,6 +77,24 @@ module Concierge
       refute_match "Executed", rendered
     end
 
+    test "a card redrawn over a queued retry says a retry is queued, not that nothing is wrong" do
+      # The retry cleared the failure this card had been printing. Unlike the
+      # +executing:+ flag — which only the caller that queued a first execution
+      # knows — this is read off the row, so *any* card that redraws says it,
+      # including one redrawn by a surface that did not queue anything.
+      row = proposal
+      row.update_columns(state: "approved", approved_by: "sam@acme.test",
+                         approved_at: Time.current,
+                         execution_error: "the billing API was down",
+                         execution_failed_at: Time.current)
+      Concierge::ApprovalIntake.retry_execution(row, by: "sam@acme.test", execute: false)
+
+      rendered = JSON.generate(Concierge::Slack::Card.new(row.reload).decided_blocks)
+      assert_match "a retry is queued", rendered
+      refute_match "not performed yet", rendered
+      refute_match "Executed", rendered
+    end
+
     test "a draft that tried to ping a channel is neutralized and flagged" do
       row = proposal(action_class: "message.outreach",
                      payload: { "body" => "<!channel> everyone look at this" },

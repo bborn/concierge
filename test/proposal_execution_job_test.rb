@@ -116,6 +116,42 @@ module Concierge
       assert_equal "enterprise", @tenant.reload.plan
     end
 
+    test "a retry deferred to this job performs, and needs no retry_failed of its own" do
+      # The half of ApprovalIntake.retry_execution(execute: false) that a surface
+      # with a deadline hands over. The job carries no knowledge that this is a
+      # retry, and needs none: the failure that would have refused it
+      # (:execution_previously_failed) was cleared synchronously, which is the
+      # point of doing that write in the request.
+      row = approved
+      row.update_columns(execution_error: "the billing API was down",
+                         execution_failed_at: Time.current)
+      Concierge::ApprovalIntake.retry_execution(row, by: "sam@acme.test", execute: false)
+
+      assert_equal :executed, Concierge::ProposalExecutionJob.perform_now(row.id, by: "sam@acme.test")
+
+      row.reload
+      assert_equal "executed", row.state
+      assert_equal "enterprise", @tenant.reload.plan
+      refute row.execution_retry_queued?, "the queue is still promising a retry that already ran"
+    end
+
+    test "a deferred retry that fails again records the new failure, not the old silence" do
+      row = approved
+      row.update_columns(execution_error: "the billing API was down",
+                         execution_failed_at: Time.current)
+      Concierge.configure do |c|
+        c.proposals { execute("record.plan_change") { |_p, _s| raise "the billing API was down again" } }
+      end
+      Concierge::ApprovalIntake.retry_execution(row, by: "sam@acme.test", execute: false)
+
+      assert_equal :failed, Concierge::ProposalExecutionJob.perform_now(row.id, by: "sam@acme.test")
+
+      row.reload
+      assert_equal "approved", row.state
+      assert_match(/the billing API was down again/, row.execution_error)
+      refute row.execution_retry_queued?
+    end
+
     test "with no Slack target it still executes and says nothing" do
       # The job is not a Slack job. A surface that has nowhere to report back —
       # or none at all — gets the execution and no transport calls.

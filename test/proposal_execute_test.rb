@@ -254,6 +254,21 @@ module Concierge
       assert_nil proposal.execution_error
     end
 
+    test "a refusal ends a queued retry even when it writes nothing else to the row" do
+      # Half the six refusals return without touching the row — no executor, a
+      # halted agent, a row someone else already executed. A queued-retry stamp
+      # that survived one of them would leave the admin queue promising, forever,
+      # that something is about to happen.
+      proposal = Proposal.propose(@billing, action_class: "record.update")
+      proposal.update!(state: "approved", approved_by: "sam@acme.test", approved_at: Time.current)
+      ApprovalIntake.retry_execution(proposal, by: "sam@acme.test", execute: false)
+      assert proposal.reload.execution_retry_queued?
+
+      assert_equal :no_executor, Proposal::Execute.call(proposal)
+
+      refute proposal.reload.execution_retry_queued?
+    end
+
     test "an executor may be registered by prefix, and the most specific one wins" do
       calls = []
       Concierge.configure do |c|
