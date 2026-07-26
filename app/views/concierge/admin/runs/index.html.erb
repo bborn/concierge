@@ -21,6 +21,14 @@
   itself.
 </p>
 
+<p>
+  Neither column can tell you whether a rule <em>held</em> — a turn that complied
+  and cited records identically to one that contradicted the rule and cited it
+  anyway. The only thing that separates them is <strong>what the agent actually
+  said</strong>, which lives in the host's own chat tables, not here. Open a run to
+  read that turn's reply and check the claim against it.
+</p>
+
 <table>
   <thead>
     <tr>
@@ -28,12 +36,13 @@
       <th>Model</th><th>Tokens</th><th>Snapshot</th><th>Memories</th>
       <th>Rules injected <small>(engine — evidence)</small></th>
       <th>Rules the agent <em>claims</em> it applied <small>(unverified)</small></th>
+      <th>What it said <small>(the check)</small></th>
     </tr>
   </thead>
   <tbody>
     <% @runs.each do |run| %>
       <tr>
-        <td><%= run.created_at.strftime("%Y-%m-%d %H:%M") %></td>
+        <td><%= link_to run.created_at.strftime("%Y-%m-%d %H:%M"), admin_run_path(run) %></td>
         <td><%= run.agent_slug %></td>
         <td><%= run.subject_type %>#<%= run.subject_id %></td>
         <td><%= run.trigger %></td>
@@ -62,6 +71,13 @@
           <% end %>
           <% if run.unknown_citations? %>
             <br><strong>cited but never injected: <%= run.unknown_rule_ids.join(", ") %></strong>
+          <% end %>
+        </td>
+        <td>
+          <% if run.message_id %>
+            <%= link_to "read the reply", admin_run_path(run) %>
+          <% else %>
+            <%= link_to "no reply recorded", admin_run_path(run) %>
           <% end %>
         </td>
       </tr>

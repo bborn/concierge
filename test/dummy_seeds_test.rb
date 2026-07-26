@@ -51,10 +51,16 @@ module Concierge
           in_force: Concierge::Rules.active_for(scope).map(&:id) }
       end
 
+      runs = Concierge::AgentRun.order(:id).map do |run|
+        { id: run.id, cited: run.rule_ids_applied.map(&:to_i),
+          pins: run.rules, reply: run.reply_text }
+      end
+
       print "SEEDED_JSON:" + {
         rules:     Concierge::AgentRule.pluck(:state, :body),
         memories:  Concierge::Memory.pluck(:source, :body),
-        proposals: proposals
+        proposals: proposals,
+        runs:      runs
       }.to_json
     RUBY
 
@@ -118,6 +124,33 @@ module Concierge
           "force for its own scope — the citation would render but name nothing " \
           "the approver can go and read."
       end
+    end
+
+    # The run screen's whole argument is that a citation cannot be checked without
+    # the reply, because a turn that obeyed a rule and a turn that contradicted it
+    # record identically. A demo where no run links to a reply leaves that
+    # argument as prose nobody can test — the same way an unciteable proposal left
+    # the provenance line above unread. So the seeds must plant the pair, and the
+    # pair must actually be indistinguishable except by reading.
+    test "a seeded pair of runs is separable only by the reply each one links to" do
+      runs = run_seeds["runs"]
+      readable = runs.select { |run| run["reply"].to_s.present? }
+
+      refute_empty readable,
+        "no seeded run links to a reply, so the run screen can never show what " \
+        "the agent actually said in the stock demo"
+
+      twins = readable.group_by { |run| [ run["cited"], run["pins"] ] }
+                      .values.find { |group| group.size >= 2 }
+
+      refute_nil twins,
+        "no two seeded runs share pins and a citation, so the demo never shows " \
+        "the two rows an operator cannot tell apart from the audit trail alone"
+      assert_equal twins.size, twins.map { |run| run["reply"] }.uniq.size,
+        "the indistinguishable runs give the same reply, so reading it separates nothing"
+      assert twins.any? { |run| run["reply"].include?("!") },
+        "neither seeded twin visibly breaks the rule it cites, so the demo shows " \
+        "a distinction without a difference"
     end
 
     # Seeds run against a database of their own, with the credentials cleared:

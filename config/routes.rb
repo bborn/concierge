@@ -21,7 +21,7 @@ Concierge::Engine.routes.draw do
     resources :memories, only: [ :index, :update, :destroy ]
     resources :rules, only: [ :index, :update ]
     resources :proposals, only: [ :index, :update ]
-    resources :runs, only: [ :index ]
+    resources :runs, only: [ :index, :show ]
     resources :routines, only: [ :index ]
     resources :deliveries, only: [ :index ]
   end

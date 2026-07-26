@@ -8,9 +8,19 @@ module Concierge
     # This is the screen that answers "prove which policy was in force when the
     # agent said what it said" — and it flags the inverse too: a run that cited a
     # rule which was never in its prompt.
+    #
+    # +show+ is where a claim can be spot-checked, because it is the only place
+    # the agent's actual reply can be read. The index deliberately does not carry
+    # it: the reply lives in the host's chat tables, so surfacing it is a query
+    # per row, and putting a hundred customers' conversations on one screen is
+    # not what an operator checking one citation asked for.
     class RunsController < BaseController
       def index
         @runs = Concierge::AgentRun.recent.limit(100)
+      end
+
+      def show
+        @run = Concierge::AgentRun.find(params[:id])
       end
     end
   end

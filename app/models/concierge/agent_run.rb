@@ -54,6 +54,59 @@ module Concierge
 
     def total_tokens = (input_tokens || 0) + (output_tokens || 0)
 
+    # --- what the agent actually said ----------------------------------------
+    #
+    # The pins prove what the agent was told; the citation is only what it says
+    # it did. Neither can distinguish a turn that followed an advisory rule from
+    # one that contradicted it and cited it anyway — those two runs record
+    # identically (design §10.4). Reading the reply is the check the engine
+    # cannot perform, so an operator has to be able to reach it.
+    #
+    # It is reached, never stored. The reply is customer-facing text living in
+    # the host's own chat tables under the host's own retention policy; copying
+    # it onto a provenance row that Concierge prunes on a different cadence would
+    # be the engine deciding a privacy question that belongs to the host (§10.12).
+    # So this resolves live, and answers honestly when the host has pruned.
+
+    # The host Chat this turn landed on, or nil once the host has dropped it.
+    def chat_record
+      return unless chat_id
+
+      Concierge.chat_model.find_by(id: chat_id)
+    rescue StandardError
+      # The host is free to remove the model or the table entirely. A missing
+      # conversation is an answer, not an error.
+      nil
+    end
+
+    # The assistant message this run produced.
+    #
+    # Looked up *through this run's own chat*, never by id against the host's
+    # whole message table. That is the isolation property: even a wrong or stale
+    # +message_id+ can only ever fail to resolve — it can never surface another
+    # agent's or another account's conversation.
+    def reply_message
+      return unless message_id
+
+      messages_of(chat_record)&.find_by(id: message_id)
+    end
+
+    # The raw assistant message as the host persisted it. Raw is the point: this
+    # is what the model emitted, citation line and all, before Concierge stripped
+    # that line out of the customer-facing +Result#reply_text+.
+    def reply_text
+      reply_message&.content.presence
+    end
+
+    # Why the reply cannot be read, when it cannot. nil means it can.
+    def reply_unavailable_reason
+      return if reply_text
+      return :no_host_chat if chat_id.nil?
+      return :not_persisted if message_id.nil?
+
+      :pruned
+    end
+
     # The exact instruction text this run was given, resolved through the pinned
     # versions. Falls back to the rule's current body only when the trail has no
     # revision at that version (a rule created before the trail existed).
@@ -74,6 +127,16 @@ module Concierge
     # question, not a library one.
     def self.prune!(older_than:)
       where(created_at: ...older_than.ago).delete_all
+    end
+
+    private
+
+    # Whatever the host named its messages association.
+    def messages_of(chat)
+      return unless chat
+      return chat.messages_association if chat.respond_to?(:messages_association)
+
+      chat.messages if chat.respond_to?(:messages)
     end
   end
 end

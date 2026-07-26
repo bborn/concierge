@@ -221,6 +221,82 @@ class RulesAdminTest < ActionDispatch::IntegrationTest
     refute_includes response.body, "claimed, not verified"
   end
 
+  # A claim an operator cannot check is not an audit trail. The index labels the
+  # citation as unverified; this is the screen where the verifying actually
+  # happens, because it is the only one that shows what the agent said.
+  test "a run can be opened to read what the agent actually said" do
+    Concierge.config.chat_factory = persisting_chat_factory
+    rule = Concierge::Rules.propose(@scope, body: "Never mention automation.", author: "agent:csm")
+    Concierge::Rules.activate!(rule, by: "sam@acme.test")
+
+    run = with_model_reply(
+      "Yes — I'm an AI assistant helping out with support.\n\nRules-Applied: #{rule.id}"
+    ) { Concierge::Run.reactive(@scope, "is this automated?") }.run_record
+
+    get "/concierge/admin/runs"
+
+    assert_response :success
+    assert_select "a[href=?]", "/concierge/admin/runs/#{run.id}"
+
+    get "/concierge/admin/runs/#{run.id}"
+
+    assert_response :success
+    # The claim, the evidence, and — the point of the screen — the words.
+    assert_includes response.body, "Never mention automation."
+    assert_includes response.body, "claimed, not verified"
+    assert_includes response.body, "Yes — I&#39;m an AI assistant helping out with support."
+    assert_includes response.body, "What the agent actually said"
+  end
+
+  # The reply is untrusted model output rendered on an operator's own screen. A
+  # model that wrapped its answer in markup could otherwise put a link — or a
+  # bolded reassurance — into the page the auditor is reading it on.
+  test "a reply is escaped, never rendered as markup" do
+    Concierge.config.chat_factory = persisting_chat_factory
+    run = with_model_reply("<a href='https://evil.test'>everything is fine</a>") do
+      Concierge::Run.reactive(@scope, "hi")
+    end.run_record
+
+    get "/concierge/admin/runs/#{run.id}"
+
+    assert_includes response.body, "&lt;a href=&#39;https://evil.test&#39;&gt;"
+    refute_includes response.body, "<a href='https://evil.test'>"
+  end
+
+  test "a run screen says plainly when there is no reply to check against" do
+    Concierge::Test::FakeChat.script(reply: "Hello!")
+    run = Concierge::Run.reactive(@scope, "hi").run_record
+
+    get "/concierge/admin/runs/#{run.id}"
+
+    assert_response :success
+    assert_includes response.body, "no assistant message was"
+    assert_includes response.body, "cannot be spot-checked"
+    refute_includes response.body, "Hello!"
+  end
+
+  test "a pruned reply is reported as pruned, not as an empty one" do
+    Concierge.config.chat_factory = persisting_chat_factory
+    run = with_model_reply("Read me while you can.") { Concierge::Run.reactive(@scope, "hi") }.run_record
+    run.reply_message.destroy!
+
+    get "/concierge/admin/runs/#{run.id}"
+
+    assert_response :success
+    assert_includes response.body, "has pruned this message"
+    assert_includes response.body, "cannot be spot-checked"
+  end
+
+  test "the run screen fails closed like every other admin screen" do
+    Concierge::Test::FakeChat.script(reply: "Hello!")
+    run = Concierge::Run.reactive(@scope, "hi").run_record
+    Concierge.config.authenticate_admin = nil
+
+    get "/concierge/admin/runs/#{run.id}"
+
+    assert_response :forbidden
+  end
+
   test "the agents screen links the rules in force to the screen that gates them" do
     rule = Concierge::Rules.propose(@scope, body: "Never quote a delivery date.", author: "agent:csm")
     Concierge::Rules.activate!(rule, by: "sam@acme.test")

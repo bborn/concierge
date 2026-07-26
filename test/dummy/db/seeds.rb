@@ -17,7 +17,7 @@ require "securerandom"
   Concierge::Handoff, Concierge::OutreachPreference, Concierge::Conversation,
   Concierge::AgentProposal, Concierge::BudgetLedger, Concierge::AgentRuleRevision,
   Concierge::AgentRule, Concierge::AgentRun,
-  InboxMessage, ChangelogEntry, User, Tenant ].each(&:delete_all)
+  Message, Chat, InboxMessage, ChangelogEntry, User, Tenant ].each(&:delete_all)
 
 acme = Tenant.create!(name: "Acme Corp", plan: "pro", last_active_at: 2.days.ago)
 dana = acme.users.create!(email: "dana@acme.test")
@@ -348,6 +348,59 @@ Concierge::ApprovalIntake.reject(
     rule_ids_applied: [ account_specific.id ],
     created_at: (10 - i).days.ago
   )
+end
+
+# Two runs that are byte-identical on everything the engine writes — same pins,
+# same citation, no unknown ids — and that a human can still tell apart, because
+# each one links to the reply it produced (§10.4, turns B and C).
+#
+# The rule cited is the account-specific one: low-key and understated, no hype,
+# no exclamation marks. One turn obeys it. The other opens with three exclamation
+# marks and cites the rule on the way out — which is not hypothetical, it is what
+# a live model was observed doing. Without the reply, the run screen shows an
+# operator two rows they have no way to separate; with it, the demo makes the
+# distinction the whole screen exists for readable at a glance.
+#
+# The host's chat rows are written directly rather than by running a turn: with
+# no API key there is no provider, so acts_as_chat cannot create a Chat at all
+# (see ChatResolver) and the offline demo has no persisted conversation of its
+# own. These stand in for the ones an online host would have written. No `models`
+# row is created on purpose — RubyLLM switches its whole model registry to the
+# database the moment that table is non-empty.
+demo_chat_id = Chat.insert_all(
+  [ { created_at: Time.current, updated_at: Time.current } ]
+).first["id"]
+
+[
+  [ "Nothing's overdue on your side. Exports are still on the roadmap; the status " \
+    "page is the place to watch for it.",
+    "obeyed the tone rule", 6.hours.ago ],
+  [ "Great news!!! Exports are going to be a game-changer for you — this is going " \
+    "to completely transform how Acme works!",
+    "cited the tone rule and did the opposite", 5.hours.ago ]
+].each do |body, note, at|
+  message_id = Message.insert_all(
+    [ { chat_id: demo_chat_id, role: "assistant", input_tokens: 940, output_tokens: 130,
+        content: "#{body}\n\n#{Concierge::Rules::CITATION_PREFIX} #{account_specific.id}",
+        created_at: at, updated_at: at } ]
+  ).first["id"]
+
+  Concierge::AgentRun.create!(
+    **scope_for(:csm, acme).key,
+    trigger: "reactive", status: "ok",
+    model: "claude-sonnet-4-5", input_tokens: 940, output_tokens: 130,
+    snapshot_digest: Concierge::Snapshot.for(
+      subject_for(acme), playbook: Concierge.config.agent(:csm).playbook
+    ).digest,
+    memory_ids: Concierge::Memory.for_scope(scope_for(:csm, acme)).limit(2).pluck(:id),
+    rules: [ blanket.pin, account_specific.pin ],
+    rule_ids_applied: [ account_specific.id ],
+    chat_id: demo_chat_id, message_id: message_id,
+    created_at: at
+  )
+  # `note` is for the reader of this file only: nothing on the row says which is
+  # which, and that is exactly the point being demonstrated.
+  note
 end
 
 # One run where the model cited a rule that was never in its prompt — a claim the

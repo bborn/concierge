@@ -256,3 +256,19 @@ input:focus-visible, select:focus-visible, textarea:focus-visible, button:focus-
   border-left-color: var(--c-bad);
   background: var(--c-bad-bg);
 }
+
+/* ---------- the agent's own words ---------- */
+
+/* The reply on a run screen, shown verbatim so a citation can be checked against
+   it. A class rather than a bare selector (cf. .concierge-flash) because a plain
+   `pre` is the wrong shape here: this is prose an operator has to *read*, so it
+   wraps instead of scrolling sideways, and stays in the body face rather than
+   dressing model output up as code. */
+.concierge-reply {
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-family: inherit;
+  font-size: 1rem;
+  line-height: 1.5;
+  border-left: 4px solid var(--c-quote);
+}

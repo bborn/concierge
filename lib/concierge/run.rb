@@ -42,9 +42,10 @@ module Concierge
         return Result.suppressed(reason: "human has taken over this thread")
       end
 
-      chat_record = ChatResolver.call(@scope, model: model)
-      @chat_id    = chat_record&.id
-      chat = build_chat(chat_record)
+      @chat_record = ChatResolver.call(@scope, model: model)
+      @chat_id     = @chat_record&.id
+      @message_watermark = last_host_message_id
+      chat = build_chat(@chat_record)
       chat.with_instructions(system_prompt)
       attach_tools(chat)
 
@@ -168,7 +169,8 @@ module Concierge
         input_tokens:     token(reply, :input_tokens),
         output_tokens:    token(reply, :output_tokens),
         rule_ids_applied: cited.rule_ids,
-        unknown_rule_ids: unknown
+        unknown_rule_ids: unknown,
+        message_id:       persisted_reply_id
       )
 
       Result.new(
@@ -187,6 +189,43 @@ module Concierge
       reply.respond_to?(name) ? reply.public_send(name) : nil
     end
 
+    # The host's own record of what the agent actually said on this turn — the
+    # one thing the run row never held, and the only way a human can tell a turn
+    # that followed a rule from one that contradicted it while citing it
+    # (design §10.4). A pointer, not a copy: the words stay in the host's tables,
+    # under the host's retention policy (§10.12).
+    #
+    # Only a message *this* turn created counts, which is what the watermark is
+    # for. A host whose chat_factory does not persist — the documented offline
+    # path, or any scripted double — leaves the chat untouched, and pointing an
+    # operator at the previous turn's reply would be worse than pointing them at
+    # nothing: they would spot-check the wrong words believing they were these.
+    def persisted_reply_id
+      latest = host_messages&.where(role: "assistant")&.maximum(:id)
+      return unless latest
+      return if @message_watermark && latest <= @message_watermark
+
+      latest
+    end
+
+    def last_host_message_id
+      host_messages&.maximum(:id)
+    end
+
+    # The host's messages for this run's chat, whatever it named the association.
+    # A host chat model that keeps none is answered with nil rather than an
+    # error — the reply link is an audit convenience, never a reason to fail a
+    # turn.
+    def host_messages
+      return unless @chat_record
+      return @chat_record.messages_association if @chat_record.respond_to?(:messages_association)
+
+      @chat_record.messages if @chat_record.respond_to?(:messages)
+    rescue StandardError => e
+      Concierge.logger&.warn("[concierge] could not read host messages: #{e.class}: #{e.message}")
+      nil
+    end
+
     # Per-run provenance (§10.4): what this run was told, pinned. Written for runs
     # that reached the model — a suppressed run assembled no prompt, so there is
     # nothing to snapshot and a row would only add noise to the audit trail.
@@ -194,7 +233,8 @@ module Concierge
     # Never lets an audit write fail the turn: the run happened whether or not we
     # managed to record it, and swallowing the reply would be the worse outcome.
     def record_provenance(status:, input_tokens: nil, output_tokens: nil,
-                          rule_ids_applied: [], unknown_rule_ids: [], error_class: nil)
+                          rule_ids_applied: [], unknown_rule_ids: [], error_class: nil,
+                          message_id: nil)
       AgentRun.create!(
         **@scope.key,
         trigger:          @trigger[:type].to_s,
@@ -208,7 +248,8 @@ module Concierge
         rule_ids_applied: rule_ids_applied,
         unknown_rule_ids: unknown_rule_ids,
         error_class:      error_class,
-        chat_id:          @chat_id
+        chat_id:          @chat_id,
+        message_id:       message_id
       )
     rescue StandardError => e
       Concierge.logger&.warn("[concierge] could not record run provenance: #{e.class}: #{e.message}")

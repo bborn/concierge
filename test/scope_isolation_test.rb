@@ -631,6 +631,52 @@ module Concierge
       end
     end
 
+    # A run row can now point at the reply the agent gave, so that an operator can
+    # spot-check a citation against what was actually said. That pointer is a new
+    # way out of the cell: resolve it carelessly — by id against the host's whole
+    # message table — and one agent's audit screen shows another agent's, or
+    # another account's, conversation. So it is resolved *through the run's own
+    # chat*, and this is the test that says so.
+    test "a run's reply resolves inside its own cell and nowhere else" do
+      Concierge.config.chat_factory = persisting_chat_factory
+
+      runs = @grid.to_h do |(agent_slug, account), scope|
+        record = with_model_reply("private reply for #{agent_slug}/#{account}") do
+          Concierge::Run.reactive(scope, "hi")
+        end.run_record
+        [ [ agent_slug, account ], record ]
+      end
+
+      # Four turns, four chats, four replies — none shared.
+      assert_equal 4, runs.values.map(&:chat_id).uniq.size, "two cells shared a chat"
+      assert_equal 4, runs.values.map(&:message_id).uniq.compact.size, "two cells shared a reply"
+
+      runs.each do |(agent_slug, account), run|
+        assert_equal "private reply for #{agent_slug}/#{account}", run.reply_text
+        assert_equal run.chat_id, run.reply_message.chat_id,
+                     "#{agent_slug}/#{account} read a message from another cell's chat"
+      end
+    end
+
+    test "a run pointed at a neighbour's message reads nothing rather than their words" do
+      Concierge.config.chat_factory = persisting_chat_factory
+
+      mine = with_model_reply("private reply for csm/acme") do
+        Concierge::Run.reactive(@grid[[ :csm, :acme ]], "hi")
+      end.run_record
+      theirs = with_model_reply("private reply for billing/globex") do
+        Concierge::Run.reactive(@grid[[ :billing, :globex ]], "hi")
+      end.run_record
+
+      # However the pointer came to be wrong — a bad backfill, a reused id after a
+      # host prune, a bug — it must fail closed.
+      mine.update!(message_id: theirs.message_id)
+
+      assert_nil mine.reload.reply_message, "a run reached into another cell's chat"
+      assert_nil mine.reply_text
+      assert_equal :pruned, mine.reply_unavailable_reason
+    end
+
     test "outreach preferences deliberately have no agent dimension" do
       # One customer, one answer to "how often may we contact you" (§10.1).
       Concierge::OutreachPreference.for(@grid[[ :csm, :acme ]]).update!(frequency: "less")
