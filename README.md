@@ -91,6 +91,11 @@ Concierge.configure do |config|
     staff = Staff.find_by(id: controller.session[:staff_id])
     staff && staff.covers?(scope.subject.id)
   end
+
+  # ...and who that operator is, since the customer is shown their name.
+  config.operator_actor = lambda do |controller, _scope|
+    Staff.find_by(id: controller.session[:staff_id])&.email
+  end
 end
 ```
 
@@ -103,6 +108,7 @@ questions**:
 |---|---|---|
 | `POST /concierge/accounts/:subject_id/chat` | is this account yours? | `config.authorize_subject` |
 | the handoff endpoints beside it | are you staff, and is this account in your book? | `config.authorize_operator` |
+| ...and, for those, a second one | who are you? | `config.operator_actor` |
 
 The engine cannot know your app's session shape, so it asks — and, like the
 admin, **fails closed**: without the hook that guards it, every request to that
@@ -138,9 +144,41 @@ config.authorize_operator = lambda do |controller, scope|
 end
 ```
 
+#### ...and who the operator is
+
+"May you" is not "who are you". The takeover records an operator of record — the
+name the product shows the customer (*"support@acme.test has taken this
+conversation over"*) and the one provenance reads — and the engine will not take
+it from the request. A caller who can name themselves can name a colleague, or
+your CEO, and be believed. So the operator endpoints ask a second time, and also
+fail closed:
+
+```ruby
+config.operator_actor = lambda do |controller, _scope|
+  Staff.find_by(id: controller.session[:staff_id])&.email
+end
+```
+
+The same identity authors any correction the takeover captures, so a rule drafted
+from what an operator said carries who said it.
+
+If one console of yours genuinely drives several operators, let the request name
+them — but say so yourself, having first established that the console may:
+
+```ruby
+config.operator_actor = lambda do |controller, _scope|
+  console = Console.find_by(api_key: controller.request.headers["X-Console-Key"])
+  console&.operators&.find_by(email: controller.params[:operator])&.email
+end
+```
+
+It is deliberately not `config.admin_actor` and does not fall back to it: the
+approval queue and the operator console are two surfaces and may have two
+sessions. A host for which they are one writes the line that says so.
+
 An account that does not exist is refused exactly as an account that is not yours
 is, so the endpoint is not an id oracle. `/concierge/admin/*` keeps its own
-`config.authenticate_admin` — three questions now, and none of them stands in for
+`config.authenticate_admin` — four questions now, and none of them stands in for
 another. The unsubscribe link is authorized by its token and needs none of them.
 
 ## More than one business function
@@ -437,7 +475,8 @@ Every tool and query is scoped to the current **(agent, account)** pair — a to
 can never reach another account's data, nor another agent's notes about the same
 account. The engine's per-account HTTP endpoints ask the host who is calling
 (`config.authorize_subject` for the customer's chat, `config.authorize_operator`
-for the staff handoff endpoints — above) and refuse until it says. Write tools are
+for the staff handoff endpoints, and `config.operator_actor` for *which* staff
+member — above) and refuse until it says. Write tools are
 grant-gated. Prompt injection is mitigated by
 least-privilege grants, an audit log, and fast human takeover — and by the rule
 gate: nothing the model or a customer says can put a behavioral instruction into

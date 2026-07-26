@@ -48,6 +48,16 @@ module Concierge
   # "this operator covers enterprise accounts only", are expressible, which they
   # would not be if a hook only saw the subject.
   #
+  # ## ...and, for an operator, a third: who
+  #
+  # "May you" is not "who are you", and answering only the first left the second
+  # to `params[:operator]`. Staff had to pass the gate, but named themselves once
+  # through it — so one of them could seize a thread as a colleague, or as the
+  # CEO, and the customer would be shown that name as the person now speaking for
+  # the company. `config.operator_actor` asks the host instead, and an operator
+  # endpoint that cannot be told who is acting refuses rather than record a name
+  # the request chose (or no name at all).
+  #
   # An account that does not exist is refused the same way an account that is not
   # yours is, so a caller who is authorized for neither cannot tell them apart.
   module ScopedEndpoint
@@ -84,6 +94,20 @@ module Concierge
 
     UNCONFIGURED = { subject: UNCONFIGURED_SUBJECT, operator: UNCONFIGURED_OPERATOR }.freeze
 
+    UNNAMED_OPERATOR = <<~MESSAGE.freeze
+      [Concierge] Refused an operator request because config.operator_actor is not
+      set (or answered with nothing). config.authorize_operator says whether this
+      requester may seize the thread; this says who they are, and the engine will
+      not take that from the request — the operator of record is shown to the
+      customer as the person now speaking for your company, so a caller who could
+      name themselves could name a colleague, or your CEO. Set it in your
+      initializer, next to config.authorize_operator:
+
+        config.operator_actor = lambda do |controller, _scope|
+          Staff.find_by(id: controller.session[:staff_id])&.email
+        end
+    MESSAGE
+
     included do
       # No default: a controller that mounts this seam and forgets to say which
       # question it asks gets the safe answer, not the permissive one.
@@ -91,6 +115,7 @@ module Concierge
 
       before_action :require_agent!
       before_action :authorize_scope!
+      before_action :require_operator_identity!
     end
 
     class_methods do
@@ -127,6 +152,28 @@ module Concierge
 
       deny(:forbidden, "not authorized for this account") unless hook.call(self, scope)
     rescue ActiveRecord::RecordNotFound
+      deny(:forbidden, "not authorized for this account")
+    end
+
+    # Who the host says is acting, for the endpoints that record it. Blank is the
+    # same as unset — a hook that cannot resolve this session to a person has not
+    # named one, and "" is not an operator.
+    def operator
+      return @operator if defined?(@operator)
+
+      hook = Concierge.config.operator_actor
+      @operator = hook&.call(self, scope).presence&.to_s
+    end
+
+    # Every operator endpoint, not only the ones that write a name today: an
+    # operator console the engine cannot attribute is a misconfiguration, and the
+    # first request through it should say so rather than the first one that
+    # happens to record something.
+    def require_operator_identity!
+      return unless concierge_question == :operator
+      return if operator
+
+      Concierge.logger.error(UNNAMED_OPERATOR)
       deny(:forbidden, "not authorized for this account")
     end
 

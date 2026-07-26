@@ -620,6 +620,16 @@ The four deltas are already filed as backlog trackers referencing this design.
   `config.authorize_operator`, which does **not** fall back to the first (task
   5005). A hook that answers one question must never be read as answering
   another — the same rule that keeps `authenticate_admin` separate from both.
+- **...and a third boundary: one staff identity and another.** Passing the
+  operator gate says *may you*, not *who are you*, and the operator of record is
+  rendered to the customer as the person now speaking for the company. Taking it
+  from `params[:operator]` let one staff member seize a thread as a colleague or
+  as the CEO — inside the gate, so neither hook above could see it.
+  `config.operator_actor` asks the host, fails closed, and names the author of
+  any correction the takeover captures (task 5011). Every identity the engine
+  records is the host's answer: `admin_actor` for the approver, `slack.actor_for`
+  for the clicker, `operator_actor` for the operator. None is ever the caller's
+  to assert.
 - **`agent_slug` as data later.** If agents ever become host-editable data (not
   code), the column decision (§10.1) revisits as an `agents` table + FK. Note the
   seam; don't build it now.

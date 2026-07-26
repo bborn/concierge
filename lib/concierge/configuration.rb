@@ -170,6 +170,38 @@ module Concierge
     #   end
     attr_accessor :authorize_operator
 
+    # Callable(controller, scope) -> *who* is driving this operator endpoint. The
+    # answer becomes the operator of record on the takeover it opens — the string
+    # the product shows the customer ("support@acme.test has taken this
+    # conversation over") and that provenance reads — and the author of any
+    # correction the takeover captures. Nil = refuse, like +authorize_operator+.
+    #
+    # +authorize_operator+ answers "may you", this answers "who are you", and the
+    # first does not imply the second. Until this hook existed the engine took the
+    # identity from +params[:operator]+, so a staff member who had passed the gate
+    # could still seize a thread as a colleague, as the CEO, or as anything at all
+    # — caller-supplied text rendered to a customer as the person now speaking for
+    # your company. The engine no longer reads that parameter.
+    #
+    #   config.operator_actor = lambda do |controller, _scope|
+    #     Staff.find_by(id: controller.session[:staff_id])&.email
+    #   end
+    #
+    # A host whose one console genuinely drives several operators can still let
+    # the request name them — but says so itself, having first established that
+    # the console is entitled to:
+    #
+    #   config.operator_actor = lambda do |controller, _scope|
+    #     console = Console.find_by(api_key: controller.request.headers["X-Console-Key"])
+    #     console&.operators&.find_by(email: controller.params[:operator])&.email
+    #   end
+    #
+    # Deliberately not +admin_actor+, and deliberately not falling back to it: the
+    # approval queue and the operator console are two surfaces, they may have two
+    # sessions, and a host for which they are one writes the one line that says so
+    # (+->(controller, _scope) { admin_actor.call(controller) }+).
+    attr_accessor :operator_actor
+
     # Callable(controller) -> the identity of the human driving the admin, used as
     # the approver when a rule is activated. The engine cannot know the host's
     # session shape, so it asks. Without it, the maker-checker gate refuses rather

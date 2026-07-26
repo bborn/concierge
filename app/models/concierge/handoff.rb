@@ -13,6 +13,13 @@ module Concierge
 
     validates :state, inclusion: { in: STATES }
 
+    # A takeover with nobody's name on it is not a takeover the product can
+    # render: the customer is told "<operator> has taken this conversation over",
+    # and an anonymous one reads as a bug or as nobody. The engine's endpoint
+    # refuses before it gets here (Concierge::ScopedEndpoint#require_operator_identity!);
+    # this is the same refusal for a host calling seize! itself.
+    validates :operator, presence: true
+
     scope :active, -> { where(state: "active") }
 
     def self.active_for(scope)

@@ -83,6 +83,23 @@ Concierge.configure do |config|
   #
   # scope.agent_slug is in reach in both, so "only the billing team may take the
   # billing thread" is one more clause.
+  #
+  # ...and WHO that operator is — also required, also fails closed. The name goes
+  # on the takeover and the product shows it to the customer as the person now
+  # speaking for you, so the engine will not take it from the request: a caller
+  # who can name themselves can name a colleague, or your CEO.
+  #
+  # config.operator_actor = lambda do |controller, _scope|
+  #   Staff.find_by(id: controller.session[:staff_id])&.email
+  # end
+  #
+  # If one console of yours really does drive several operators, let the request
+  # name them — but say so here, after establishing the console is entitled to:
+  #
+  # config.operator_actor = lambda do |controller, _scope|
+  #   console = Console.find_by(api_key: controller.request.headers["X-Console-Key"])
+  #   console&.operators&.find_by(email: controller.params[:operator])&.email
+  # end
 
   # 8. Rules — generalized, versioned, human-gated behavioral instructions, split
   # out from memory. A human correction is stored verbatim and a background job

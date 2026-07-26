@@ -73,6 +73,15 @@ module Concierge
       Concierge.configure { |c| c.authorize_operator = ->(_controller, _scope) { true } }
     end
 
+    # ...and a third, because "may you" is not "who are you". The operator
+    # endpoints record a name and show it to the customer, so they also refuse
+    # without +config.operator_actor+ — and, for the same reason the two above are
+    # separate, opening the gate must not quietly name whoever walked through it.
+    # A test that wants a takeover to succeed says both, and says who.
+    def self.name_all_operators!(email = "sam@acme.test")
+      Concierge.configure { |c| c.operator_actor = ->(_controller, _scope) { email } }
+    end
+
     # The pluralized form of the same host: two business functions over the same
     # Tenants. Deliberately NOT part of the baseline above — every other test
     # keeps running against the *single-agent* configuration, which is how we
