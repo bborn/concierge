@@ -38,9 +38,23 @@ module Concierge
     SCRIPT = <<~RUBY.freeze
       load Rails.root.join("db/seeds.rb").to_s
 
+      # Which rules were in force for a proposal's own (agent, account) has to be
+      # computed here, where the host's config and its segments_for hook are
+      # loaded — the id on the row does not say what it was scoped to.
+      proposals = Concierge::AgentProposal.order(:id).map do |proposal|
+        scope = Concierge::Scope.new(
+          Concierge.config.agent(proposal.agent_slug),
+          Concierge.config.account.find_subject(proposal.subject_id)
+        )
+        { id: proposal.id, agent: proposal.agent_slug, state: proposal.state,
+          cited: proposal.rule_ids_applied.map(&:to_i),
+          in_force: Concierge::Rules.active_for(scope).map(&:id) }
+      end
+
       print "SEEDED_JSON:" + {
-        rules:    Concierge::AgentRule.pluck(:state, :body),
-        memories: Concierge::Memory.pluck(:source, :body)
+        rules:     Concierge::AgentRule.pluck(:state, :body),
+        memories:  Concierge::Memory.pluck(:source, :body),
+        proposals: proposals
       }.to_json
     RUBY
 
@@ -74,6 +88,36 @@ module Concierge
       refute_empty tone, "the seeded low-key tone instruction is gone entirely"
       assert tone.any? { |body| body.match?(/skeptical of AI tooling/i) },
         "the account-specific tone rule no longer explains why it is low-key"
+    end
+
+    # The proposal card and the Slack card both render a provenance line off
+    # +rule_ids_applied+, telling the approver which rules the agent *claims* it
+    # applied. No seeded proposal carried one, so neither line could appear in the
+    # stock demo — which is how its wording went unexamined until §10.4 was
+    # revisited. A branch no seeded row can reach is a branch nobody reads before
+    # shipping it.
+    #
+    # Both halves are asserted together on purpose: with no citation at all the
+    # line stays dead, and a citation naming an id that is not in force for this
+    # (agent, account) would make it render while telling the approver nothing
+    # true — a provenance trail pointing across the boundary every other table in
+    # the engine is keyed by.
+    test "a seeded proposal cites a rule, and cites one in force for its own scope" do
+      proposals = run_seeds["proposals"]
+      citing    = proposals.select { |proposal| proposal["cited"].any? }
+
+      refute_empty proposals, "seeds staged no proposals at all"
+      refute_empty citing,
+        "no seeded proposal carries rule_ids_applied, so the provenance line on " \
+        "the proposal card and the Slack card can never render in the stock demo"
+
+      citing.each do |proposal|
+        assert_empty proposal["cited"] - proposal["in_force"],
+          "proposal ##{proposal['id']} (#{proposal['agent']}) cites rule " \
+          "#{(proposal['cited'] - proposal['in_force']).join(', ')}, which is not in " \
+          "force for its own scope — the citation would render but name nothing " \
+          "the approver can go and read."
+      end
     end
 
     # Seeds run against a database of their own, with the credentials cleared:
