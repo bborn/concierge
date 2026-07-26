@@ -133,6 +133,20 @@ module Concierge
     # fails closed rather than shipping an open dashboard).
     attr_accessor :authenticate_admin
 
+    # Callable(controller, scope) -> truthy to permit this requester to act as
+    # this (agent, account) pair on the engine's per-account endpoints: the chat
+    # endpoint and the operator handoff endpoints. Nil = deny, loudly (see
+    # Concierge::ScopedEndpoint) — an endpoint that takes the account out of the
+    # URL and answers with that account's memory, rules and snapshot cannot
+    # default to open. The scope, rather than the bare subject, so a host can
+    # answer per business function too.
+    #
+    #   config.authorize_subject = lambda do |controller, scope|
+    #     user = User.find_by(id: controller.session[:user_id])
+    #     user && user.tenant_id.to_s == scope.subject.id.to_s
+    #   end
+    attr_accessor :authorize_subject
+
     # Callable(controller) -> the identity of the human driving the admin, used as
     # the approver when a rule is activated. The engine cannot know the host's
     # session shape, so it asks. Without it, the maker-checker gate refuses rather

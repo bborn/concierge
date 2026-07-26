@@ -41,7 +41,12 @@ verify" at the bottom.
   it to an open page, so the unread badge appears on the next request rather
   than live.
 
-## Known gap, filed separately
+## Known gap, filed separately — since closed
+
+> **Update (2026-07-26):** fixed by task 5003 — the engine now has
+> `config.authorize_subject`, and the chat and handoff endpoints fail closed
+> without it. See `docs/design/qa/5003-chat-authorization/`.
+
 
 `POST /concierge/accounts/:subject_id/chat` is unauthenticated — the engine has no
 equivalent of `config.authenticate_admin` for it, so a signed-in user could hand-

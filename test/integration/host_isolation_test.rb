@@ -77,4 +77,93 @@ class HostIsolationTest < ActionDispatch::IntegrationTest
     assert_includes prompt, "Acme wants a Q3 launch."
     assert_not_includes prompt, "Globex renewal is in November."
   end
+
+  # The host's own screens never render another account's subject_id — but the
+  # engine's endpoints take it out of the URL, so "the host never shows it" is not
+  # the same as "the engine will not answer it". Everything below is a request
+  # nobody has to be tricked into making: a signed-in customer typing another
+  # tenant's id into the URL a browser already has.
+  test "the chat endpoint refuses another account's subject_id" do
+    Concierge::Test::FakeChat.script(reply: "should never be assembled")
+
+    post "/concierge/accounts/#{@globex.id}/chat", params: { message: "hi", agent: "csm" }
+
+    assert_response :forbidden
+    assert_nil response.parsed_body["reply"]
+    assert_empty Concierge::Test::FakeChat.current.prompts,
+                 "a refused request still ran a turn"
+    assert_not_includes Concierge::Test::FakeChat.current.system_prompt,
+                        "Globex renewal is in November.",
+                        "a refused request still assembled Globex's state into a prompt"
+    assert_equal 0, Concierge::AgentRun.for_scope(csm_scope(@globex)).count
+    assert_equal 0, Concierge::Conversation.for_scope(csm_scope(@globex)).count
+  end
+
+  test "the chat endpoint refuses another account under every agent" do
+    %w[csm billing].each do |slug|
+      Concierge::Test::FakeChat.script(reply: "should never be assembled")
+
+      post "/concierge/accounts/#{@globex.id}/chat", params: { message: "hi", agent: slug }
+
+      assert_response :forbidden, "the #{slug} agent answered for another account"
+    end
+  end
+
+  test "a signed-out request is refused too" do
+    delete signout_path
+    Concierge::Test::FakeChat.script(reply: "should never be assembled")
+
+    post "/concierge/accounts/#{@acme.id}/chat", params: { message: "hi", agent: "csm" }
+
+    assert_response :forbidden
+  end
+
+  test "the operator handoff endpoints refuse another account's subject_id" do
+    post "/concierge/accounts/#{@globex.id}/handoff", params: { operator: "dana@acme.test" }
+    assert_response :forbidden
+
+    post "/concierge/accounts/#{@globex.id}/handoff/message", params: { body: "Dana here." }
+    assert_response :forbidden
+
+    # Globex's own handoff (seized in setup by someone at Globex) is untouched:
+    # neither seized by Dana, nor released by her, nor written into.
+    handoff = Concierge::Handoff.active_for(csm_scope(@globex))
+    assert_equal "someone@globex.test", handoff.operator
+    assert_equal 0, Concierge::Memory.for_scope(csm_scope(@globex))
+                                     .where(body: "Dana here.").count
+  end
+
+  test "releasing another account's thread is refused" do
+    delete "/concierge/accounts/#{@globex.id}/handoff"
+
+    assert_response :forbidden
+    assert Concierge::Handoff.active_for(csm_scope(@globex)),
+           "Dana released Globex's handoff and put their agent back on the thread"
+  end
+
+  test "an account that does not exist is refused the same way one that is not yours is" do
+    # Otherwise the refusal is an existence oracle: 403 for real accounts, 404
+    # for made-up ones, and the id space is enumerable from outside.
+    post "/concierge/accounts/#{Tenant.maximum(:id) + 1}/chat", params: { message: "hi" }
+    not_yours = response.status
+
+    post "/concierge/accounts/#{@globex.id}/chat", params: { message: "hi" }
+
+    assert_equal response.status, not_yours
+    assert_response :forbidden
+  end
+
+  test "Dana keeps every endpoint she is entitled to" do
+    # The gate has to refuse the neighbour without costing the customer their own
+    # agent — a fix that shut the endpoint for everyone would pass every test
+    # above and break the product.
+    Concierge::Test::FakeChat.script(reply: "Happy to help!")
+    post "/concierge/accounts/#{@acme.id}/chat", params: { message: "hi", agent: "csm" }
+    assert_response :success
+    assert_equal "Happy to help!", response.parsed_body["reply"]
+
+    post "/concierge/accounts/#{@acme.id}/handoff", params: { operator: "support@acme.test" }
+    assert_response :created
+    assert Concierge::Handoff.active_for(csm_scope(@acme))
+  end
 end
