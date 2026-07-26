@@ -620,6 +620,56 @@ module Concierge
       end
     end
 
+    # Both tests above prove the degrade keeps the grid apart. Neither proved the
+    # degrade still *happens*, because both inherit the dummy's default_provider
+    # and so ask about :anthropic directly. A host that leaves default_provider
+    # nil — documented and supported — puts the whole gate on the model lookup,
+    # and that lookup goes to whichever registry RubyLLM memoized: the host's own
+    # `models` table once acts_as_model has a row in it, holding only the models
+    # this host has already talked to. Every other model then read as "unknown,
+    # assume credentials are fine", the gate stopped firing, and the four cells
+    # went down the *online* path with no key — raising ModelNotFoundError out of
+    # a before_save mid-grid. Which is worse than a leak in one respect: the run
+    # that raises has already written its AgentRun row, so the grid is left half
+    # populated by a path nobody chose.
+    #
+    # So this is the same isolation question asked in the configuration where the
+    # degrade was silently switched off.
+    test "a partial registry does not switch the degrade off under any cell" do
+      Concierge.config.default_provider = nil
+
+      with_partial_model_registry("gpt-4.1-nano" => "openai") do
+        without_provider_credentials do
+          chats = @grid.transform_values do |scope|
+            assert_nothing_raised { Concierge::ChatResolver.call(scope) }
+          end
+
+          assert_equal [ nil ], chats.values.uniq,
+                       "a cell was handed a chat record the provider could not have created"
+
+          @grid.each do |(agent_slug, account), scope|
+            Concierge::Test::FakeChat.script(reply: "offline reply for #{agent_slug}/#{account}")
+            result = Concierge::Run.reactive(scope, "hi")
+
+            assert result.ok?, "#{agent_slug}/#{account} could not run offline: #{result.error.inspect}"
+            assert_equal "offline reply for #{agent_slug}/#{account}", result.reply_text
+          end
+        end
+      end
+
+      assert_equal 0, Concierge::Conversation.count,
+                   "conversations were recorded for chats that were never created"
+
+      @grid.each do |(agent_slug, account), scope|
+        runs = Concierge::AgentRun.for_scope(scope)
+
+        assert_equal 1, runs.count, "#{agent_slug}/#{account} saw #{runs.count} runs"
+        assert_nil runs.first.chat_id, "an offline run claimed a chat it never had"
+        assert_equal [ "private note for #{agent_slug}/#{account}" ],
+                     Concierge::Memory.for_scope(scope).map(&:body)
+      end
+    end
+
     # Credentials coming back must not merge cells either: two agents over one
     # account still get two conversations, exactly as when they never went away.
     test "credentials returning still yields one conversation per (agent, account)" do

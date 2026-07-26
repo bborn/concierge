@@ -25,15 +25,25 @@ require "rails/test_help"
 # first — and a DB-backed registry holds only the handful of models this suite
 # created, so `Models.find` starts raising for everything else.
 #
-# That is a live tripwire, not a hypothetical: it is what made the suite
+# That was a live tripwire, not a hypothetical: it is what made the suite
 # order-dependent the moment a test drove the real acts_as_chat path (which
 # creates a Model row) before ProviderCredentialsTest asked about an OpenAI
 # model. Deciding it here, deterministically, keeps every run asking the same
 # registry the same question.
+#
+# It is no longer what makes the *behaviour* correct, and must not be read as
+# such. Pinning the registry only ever hid the flake; ProviderCredentials read a
+# registry miss as "unknown model, assume credentials are fine" either way, which
+# is a production defect on any host on acts_as_model — see
+# ProviderCredentials.provider_for. That is fixed, and the suite now passes with
+# this line removed; it stays because "every run asks the same registry" is still
+# worth having. Tests that need the host's real, partial registry ask for it, in
+# scope, via with_partial_model_registry.
 RubyLLM.models.load_from_json!
 
 require_relative "support/fake_chat"
 require_relative "support/offline_provider"
+require_relative "support/partial_model_registry"
 require_relative "support/stubbed_provider"
 require_relative "support/dummy_config"
 require_relative "support/slack_transport"
