@@ -16,7 +16,16 @@ module Concierge
     authorize_with :subject
 
     def create
-      result = Concierge::Run.reactive(scope, params[:message].to_s)
+      message = params[:message].to_s.strip
+
+      # A blank submit is not a turn. Without this the engine assembled a prompt,
+      # spent a model call and wrote an AgentRun whose own question reads as
+      # "not persisted" — an audit row for something nobody asked. The widget
+      # should not send one either, but the endpoint is what has to be sure: it
+      # is reachable by anything the host points at it.
+      return deny(:unprocessable_entity, "there was no message to send") if message.blank?
+
+      result = Concierge::Run.reactive(scope, message)
 
       if result.ok?
         render json: { reply: result.reply_text, agent: scope.agent_slug }

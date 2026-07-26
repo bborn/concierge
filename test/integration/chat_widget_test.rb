@@ -19,6 +19,34 @@ class ChatWidgetTest < ActionDispatch::IntegrationTest
     assert_equal "Happy to help!", response.parsed_body["reply"]
   end
 
+  # A blank submit used to answer 200: the endpoint ran the turn, spent a model
+  # call, and wrote an AgentRun whose own question reads back as "not persisted"
+  # — an audit row for a question nobody asked. Found by submitting an empty
+  # message in the browser. The host's inbox reply already refused one; this
+  # endpoint is reachable by anything a host points at it, so it has to be sure
+  # itself.
+  test "a blank message is refused without spending a turn" do
+    Concierge::Test::FakeChat.script(reply: "should never be asked for")
+
+    [ "", "   ", "\n\t " ].each do |blank|
+      assert_no_difference -> { Concierge::AgentRun.count }, "#{blank.inspect} started a run" do
+        post "/concierge/accounts/#{@tenant.id}/chat", params: { message: blank }
+      end
+
+      assert_response :unprocessable_entity
+      assert_equal "there was no message to send", response.parsed_body["error"]
+    end
+  end
+
+  test "a message that is only whitespace around real words still counts" do
+    Concierge::Test::FakeChat.script(reply: "Happy to help!")
+
+    post "/concierge/accounts/#{@tenant.id}/chat", params: { message: "  how do I publish?  " }
+
+    assert_response :success
+    assert_equal "Happy to help!", response.parsed_body["reply"]
+  end
+
   test "a failed run returns a graceful error" do
     Concierge::Test::FakeChat.raise_with(RubyLLM::Error.new(nil, "boom"))
 
