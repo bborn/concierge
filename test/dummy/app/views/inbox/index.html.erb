@@ -5,8 +5,8 @@
     <h1>Inbox</h1>
     <p class="lede">
       What <%= csm_persona&.name || "your agent" %> and the billing team have sent
-      <%= current_tenant.name %> in the app — and where you answer them. Each reply
-      goes back to the agent that wrote to you, with their message quoted for them.
+      <%= current_tenant.name %> in the app — and where you answer them. A reply goes
+      back to the agent that wrote to you, quoting their message.
     </p>
   </div>
   <% if inbox.unread_count.positive? %>

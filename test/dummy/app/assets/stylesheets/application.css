@@ -139,6 +139,7 @@ p { margin: 0 0 1em; }
 .page { max-width: 940px; margin: 0 auto; padding: 28px 20px 140px; }
 .page__head { display: flex; align-items: flex-start; gap: 16px; margin-bottom: 20px; }
 .page__head > div:first-child { margin-right: auto; }
+.page__head .btn { white-space: nowrap; }
 .lede { color: var(--text-dim); margin: 0; }
 
 .card {
