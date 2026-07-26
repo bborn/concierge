@@ -39,10 +39,15 @@ module Concierge
       assert_match "approve it, then do it yourself", JSON.generate(execution.blocks)
     end
 
-    test "a card names the rules the agent said steered the draft" do
+    # An approver deciding in Slack sees less context than one on the admin
+    # screen, so the one line they do get has to be honest: the citation is the
+    # agent's claim about itself, and a model has cited a rule while
+    # contradicting it (§10.4).
+    test "a card names the rules the agent claimed, and marks the claim unverified" do
       row = proposal(rule_ids_applied: [ 7, 9 ])
 
-      assert_match(/Rules the agent says it applied: #7, #9/, JSON.generate(Concierge::Slack::Card.new(row).blocks))
+      rendered = JSON.generate(Concierge::Slack::Card.new(row).blocks)
+      assert_match(/Rules the agent claims it applied \(unverified\): #7, #9/, rendered)
     end
 
     test "a card says the record is the admin queue, not the message" do

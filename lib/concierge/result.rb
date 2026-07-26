@@ -5,8 +5,10 @@ module Concierge
     attr_reader :reply_text, :tool_calls, :input_tokens, :output_tokens, :model, :error
 
     # The rules the agent said it applied, and the ones it cited that were never
-    # in its prompt (design §10.4). +rule_ids_applied+ is the model's claim;
-    # +unknown_rule_ids+ is that claim cross-checked against what we injected.
+    # in its prompt (design §10.4). +rule_ids_applied+ is the model's claim — an
+    # unverified self-report, and not evidence the rule was followed: a model can
+    # cite a rule in the same breath as contradicting it. +unknown_rule_ids+ is
+    # that claim cross-checked against what we injected.
     attr_reader :rule_ids_applied, :unknown_rule_ids
 
     # The provenance row written for this run, when one was.

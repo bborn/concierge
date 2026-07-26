@@ -203,7 +203,10 @@ module Concierge
       def provenance_context
         notes = []
         if proposal.rule_ids_applied.any?
-          notes << "Rules the agent says it applied: #{proposal.rule_ids_applied.map { |id| "##{id}" }.join(', ')}"
+          # Its own claim, and flagged as one — a model can cite a rule while
+          # contradicting it, so this is never proof of compliance (§10.4).
+          notes << "Rules the agent claims it applied (unverified): " \
+                   "#{proposal.rule_ids_applied.map { |id| "##{id}" }.join(', ')}"
         end
         if proposal.precondition_digest.present?
           notes << "Assumed state `#{proposal.precondition_digest}` — re-checked at execution"

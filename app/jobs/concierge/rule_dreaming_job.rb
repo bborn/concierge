@@ -10,6 +10,12 @@ module Concierge
   #   never cited    the rule has been injected into N runs and the agent has
   #                  never once claimed to apply it (§10.4's citations are what
   #                  make this answerable at all)
+  #
+  #                  Citations are the model's self-report and can be wrong, so
+  #                  this evidence is deliberately weak and deliberately one-way:
+  #                  a *false* citation only suppresses a proposal, and a missed
+  #                  one only produces a proposal a human then rejects. Nothing
+  #                  here treats a citation as proof the rule was obeyed.
   #   duplicate      two active rules in the same bucket say the same thing
   #   superseded     the rule points at its replacement but is still in force
   #

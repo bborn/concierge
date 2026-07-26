@@ -25,8 +25,22 @@ module Concierge
 
     def memory_ids      = super || []
     def rules           = super || []
-    def rule_ids_applied = super || []
     def unknown_rule_ids = super || []
+
+    # The model's own claim about which rules it applied, parsed off the citation
+    # line in its reply — **not** evidence that any of them were followed.
+    #
+    # `rules` above is engine-written and proves what the agent was told.
+    # This is model-written and proves only what the model said about itself. A
+    # live model has been observed contradicting an advisory rule while sincerely
+    # citing it (design §10.4), and that run records identically to a compliant
+    # one: same pins, a citation, no unknown ids. The engine cannot tell them
+    # apart, because it never sees the rule's meaning — only its id coming back.
+    #
+    # Kept because it answers "did the rule reach the model's attention at all?"
+    # (what RuleDreamingJob's "never cited" evidence rests on) and because the
+    # cross-check below catches invented ids. Never surface it as compliance.
+    def rule_ids_applied = super || []
 
     # The rule ids that were in the prompt, whatever the model then claimed.
     def injected_rule_ids
