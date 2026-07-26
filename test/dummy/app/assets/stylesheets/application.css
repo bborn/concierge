@@ -286,6 +286,14 @@ input:focus, textarea:focus, select:focus { outline: 2px solid var(--accent); ou
 .msg__who { font-weight: 600; }
 .msg__text { white-space: pre-wrap; }
 
+/* Answering, and the answered exchange it turns into. */
+.msg__reply { margin-top: 10px; display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.msg__composer { display: flex; gap: 8px; flex: 1 1 300px; }
+.msg__composer input[type="text"] { flex: 1; min-width: 0; }
+.msg__thread { margin-top: 10px; display: flex; flex-direction: column; gap: 8px; align-items: flex-start; }
+.msg__thread .bubble--user { align-self: flex-start; }
+.msg__replied { font-size: 12px; margin: 0; }
+
 /* --- chat widget -------------------------------------------------------- */
 
 .kit { position: fixed; right: 20px; bottom: 20px; z-index: 40; width: 370px; max-width: calc(100vw - 40px); }

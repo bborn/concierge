@@ -18,6 +18,9 @@ Rails.application.routes.draw do
   get  "inbox",           to: "inbox#index",    as: :inbox
   post "inbox/read_all",  to: "inbox#read_all", as: :read_all_inbox
   post "inbox/:id/read",  to: "inbox#read",     as: :read_inbox_message
+  # Answering the agent that sent it. Which agent that is comes off the delivery
+  # row, never off the request — see InboxController#reply.
+  post "inbox/:id/reply", to: "inbox#reply",    as: :reply_inbox_message
 
   get "account", to: "account#show", as: :account
 

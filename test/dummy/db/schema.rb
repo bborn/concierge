@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_07_26_090007) do
+ActiveRecord::Schema[8.1].define(version: 2026_07_26_090008) do
   create_table "active_storage_attachments", force: :cascade do |t|
     t.bigint "blob_id", null: false
     t.datetime "created_at", null: false
@@ -274,10 +274,14 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_26_090007) do
   end
 
   create_table "inbox_messages", force: :cascade do |t|
+    t.text "agent_reply"
     t.text "body"
     t.datetime "created_at", null: false
     t.string "delivery_token", null: false
     t.datetime "read_at"
+    t.datetime "replied_at"
+    t.text "reply_body"
+    t.integer "reply_run_id"
     t.integer "tenant_id", null: false
     t.datetime "updated_at", null: false
     t.index ["delivery_token"], name: "index_inbox_messages_on_delivery_token", unique: true

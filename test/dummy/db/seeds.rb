@@ -153,6 +153,33 @@ def deliver_in_app(scope, body, sent_at:, kind: "outreach")
   )
 end
 
+# An exchange that closed, so the demo shows the loop and not only the affordance:
+# Kit asked something a month ago, Dana answered in the inbox, and Kit answered
+# back. The unanswered question below it is the one you can answer by hand.
+#
+# The two halves are written here rather than produced by running a turn, for the
+# reason the hand-written transcript further down gives: a seed run must not
+# reach a provider, and the offline stand-in answers by keyword rather than to
+# order. Everything about the reply path *itself* is real — drive it in the
+# running app and the host composes the quote, the engine runs the turn under
+# :csm, and the answer lands on this same row.
+deliver_in_app(
+  scope_for(:csm, acme),
+  "Welcome aboard. I'm Kit — I keep an eye on this account and I'll only get in " \
+  "touch when there's something worth your time. Anything you want me to watch for?",
+  sent_at: 27.days.ago
+)
+
+# `sole` on purpose: this is the only message Acme has at this point in the file,
+# and if that stops being true the seed should fail loudly rather than answer the
+# wrong one.
+InboxMessage.where(tenant_id: acme.id).sole.record_reply!(
+  body: "Yes — tell me if we go a couple of weeks without publishing anything.",
+  agent_reply: "Noted, I've written that down. If two weeks go by with nothing " \
+               "published I'll say so here rather than let it drift.",
+  at: 27.days.ago + 3.hours
+)
+
 deliver_in_app(
   scope_for(:csm, acme),
   "You've been on Pro for a few weeks and haven't published a changelog entry yet — " \

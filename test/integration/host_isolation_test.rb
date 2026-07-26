@@ -79,6 +79,43 @@ class HostIsolationTest < ActionDispatch::IntegrationTest
     assert_not_includes prompt, "Globex renewal is in November."
   end
 
+  test "answering another account's inbox message is refused, and runs nothing" do
+    # The inbox is the one host screen that now *writes* through an agent, and it
+    # takes a message id out of the URL. Globex's id is not a way to make Globex's
+    # agent answer, nor to make Acme's answer on Globex's behalf.
+    theirs = @globex.inbox_messages.sole
+    Concierge::Test::FakeChat.script(reply: "should never be assembled")
+
+    post "/inbox/#{theirs.id}/reply", params: { body: "Answering for you." }
+
+    assert_response :not_found
+    assert_not theirs.reload.replied?
+    assert_empty Concierge::Test::FakeChat.current.prompts
+    assert_equal 0, Concierge::AgentRun.for_scope(csm_scope(@globex)).count
+    assert_equal 0, Concierge::AgentRun.for_scope(csm_scope(@acme)).count
+  end
+
+  test "answering the billing agent stays inside the billing cell" do
+    deliver_in_app(billing_scope(@acme), "Acme: the card on file expires in March.")
+    Concierge::ContextStore.new.remember(csm_scope(@acme), body: "Acme wants a Q3 launch.")
+    Concierge::Test::FakeChat.script(reply: "Noted.")
+
+    post "/inbox/#{@acme.inbox_messages.sole.id}/reply", params: { body: "Can I update it here?" }
+
+    # Right agent, right account: billing's own charter, and neither the CSM's
+    # memory nor another account's anywhere in the prompt.
+    prompt = Concierge::Test::FakeChat.current.system_prompt
+    assert_includes prompt, "Acme bills monthly per seat."
+    assert_not_includes prompt, "Acme wants a Q3 launch."
+    assert_not_includes prompt, "Globex renewal is in November."
+
+    assert_equal 1, Concierge::AgentRun.for_scope(billing_scope(@acme)).count
+    [ csm_scope(@acme), csm_scope(@globex), billing_scope(@globex) ].each do |scope|
+      assert_equal 0, Concierge::AgentRun.for_scope(scope).count,
+                   "a reply to Acme's billing agent ran in #{scope.key.inspect}"
+    end
+  end
+
   # The host's own screens never render another account's subject_id — but the
   # engine's endpoints take it out of the URL, so "the host never shows it" is not
   # the same as "the engine will not answer it". Everything below is a request
