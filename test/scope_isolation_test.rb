@@ -466,6 +466,67 @@ module Concierge
       end
     end
 
+    # The offline path is a degrade, and a degrade is exactly where an invariant
+    # gets quietly dropped. With no provider credentials there is no persisted
+    # Chat to key by, so the grid loses the one thing that normally keeps two
+    # agents' threads apart — which would be a fine place to accidentally hand
+    # every cell the same conversation. It must not: each cell still gets its own
+    # chat object, and no cell may be handed a neighbour's persisted one.
+    test "the uncredentialed path hands no cell a chat, and none a neighbour's" do
+      without_provider_credentials do
+        chats = @grid.transform_values { |scope| Concierge::ChatResolver.call(scope) }
+
+        assert_equal [ nil ], chats.values.uniq,
+                     "a cell was handed a chat record the provider could not have created"
+      end
+
+      assert_equal 0, Concierge::Conversation.count,
+                   "conversations were recorded for chats that were never created"
+    end
+
+    test "an uncredentialed run keeps every cell's prompt and provenance its own" do
+      without_provider_credentials do
+        @grid.each do |(agent_slug, account), scope|
+          Concierge::Test::FakeChat.script(reply: "offline reply for #{agent_slug}/#{account}")
+          result = Concierge::Run.reactive(scope, "hi")
+
+          assert result.ok?, "#{agent_slug}/#{account} could not run offline"
+          assert_equal "offline reply for #{agent_slug}/#{account}", result.reply_text
+        end
+      end
+
+      @grid.each do |(agent_slug, account), scope|
+        runs = Concierge::AgentRun.for_scope(scope)
+
+        assert_equal 1, runs.count, "#{agent_slug}/#{account} saw #{runs.count} runs"
+        assert_nil runs.first.chat_id, "an offline run claimed a chat it never had"
+      end
+
+      # Each cell's memory is still only its own — the degrade did not widen any
+      # scope on the way past.
+      @grid.each do |(agent_slug, account), scope|
+        assert_equal [ "private note for #{agent_slug}/#{account}" ],
+                     Concierge::Memory.for_scope(scope).map(&:body)
+      end
+    end
+
+    # Credentials coming back must not merge cells either: two agents over one
+    # account still get two conversations, exactly as when they never went away.
+    test "credentials returning still yields one conversation per (agent, account)" do
+      without_provider_credentials do
+        @grid.each_value { |scope| Concierge::ChatResolver.call(scope) }
+      end
+
+      chat_ids = @grid.transform_values { |scope| Concierge::ChatResolver.call(scope).id }
+
+      assert_equal 4, chat_ids.values.uniq.size, "two cells were handed the same Chat"
+      assert_equal 4, Concierge::Conversation.count
+      @grid.each do |(agent_slug, account), scope|
+        assert_equal 1, Concierge::Conversation.for_scope(scope).count,
+                     "#{agent_slug}/#{account} did not own exactly one conversation"
+      end
+    end
+
     test "outreach preferences deliberately have no agent dimension" do
       # One customer, one answer to "how often may we contact you" (§10.1).
       Concierge::OutreachPreference.for(@grid[[ :csm, :acme ]]).update!(frequency: "less")

@@ -31,5 +31,48 @@ module Concierge
       assert_nil ENV["OPENAI_API_KEY"]
       assert_nothing_raised { ChatResolver.call(@subject) }
     end
+
+    # Regression: the documented offline path. Creating the Chat *record* made
+    # acts_as_chat resolve a model, and Models.resolve instantiates the provider
+    # before it honours assume_exists — so a host with no API key raised
+    # RubyLLM::ConfigurationError out of a before_save and never reached its own
+    # scripted chat_factory. Assuming the model exists cannot help; neither can
+    # leaving the provider unset (the other branch of resolve instantiates too).
+    test "resolves without credentials instead of raising" do
+      without_provider_credentials do
+        assert_nothing_raised { ChatResolver.call(@subject) }
+      end
+    end
+
+    test "an uncredentialed provider yields no chat record and no conversation" do
+      without_provider_credentials do
+        assert_nil ChatResolver.call(@subject)
+      end
+
+      assert_equal 0, Conversation.for_subject(@subject).count,
+                   "a conversation was recorded pointing at a Chat that was never created"
+    end
+
+    # The degrade is scoped to record creation, not to the config: the moment
+    # credentials appear, the same host persists conversations again.
+    test "credentials appearing later restore persistence" do
+      without_provider_credentials { ChatResolver.call(@subject) }
+
+      chat = ChatResolver.call(@subject)
+
+      assert chat.persisted?
+      assert_equal "anthropic", chat.provider
+      assert_equal 1, Conversation.for_subject(@subject).count
+    end
+
+    # An existing conversation predates the credentials going away, so it still
+    # resolves — losing the key must not orphan history a host already has.
+    test "an already-persisted conversation still resolves without credentials" do
+      persisted = ChatResolver.call(@subject)
+
+      without_provider_credentials do
+        assert_equal persisted.id, ChatResolver.call(@subject).id
+      end
+    end
   end
 end

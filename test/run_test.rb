@@ -41,6 +41,52 @@ module Concierge
       assert_kind_of RubyLLM::Error, result.error
     end
 
+    # The documented offline path, end to end: no credentials anywhere, and the
+    # host has swapped in a scripted chat. This is the exact call from the bug
+    # report, which raised RubyLLM::ConfigurationError before the fix.
+    test "a proactive run answers with no provider credentials at all" do
+      Concierge::Test::FakeChat.script(reply: "Offline, but still here.")
+
+      result = nil
+      without_provider_credentials do
+        assert_nothing_raised { result = Concierge::Run.proactive(@subject, instruction: "hi") }
+      end
+
+      assert result.ok?
+      assert_equal "Offline, but still here.", result.reply_text
+    end
+
+    # ...and it degrades rather than pretending. A host with no credentials that
+    # never supplied an offline chat_factory gets the default one, which does try
+    # to reach the provider — that must come back failed, not raised and not
+    # quietly green. RubyLLM derives ConfigurationError from StandardError rather
+    # than RubyLLM::Error, so it used to sail through Run's rescue untouched.
+    test "no credentials and no offline chat is a failed Result, not a raise" do
+      Concierge.config.chat_factory = Concierge::Configuration::DEFAULT_CHAT_FACTORY
+
+      result = nil
+      without_provider_credentials do
+        assert_nothing_raised { result = Concierge::Run.reactive(@subject, "hi") }
+      end
+
+      refute result.ok?, "an unreachable provider reported a successful run"
+      assert_kind_of RubyLLM::ConfigurationError, result.error
+    end
+
+    # Provenance is how an operator finds out. A run that could not reach the
+    # model is recorded as failed with its error class, not left unaccounted for.
+    test "a run with no credentials records failed provenance" do
+      Concierge.config.chat_factory = Concierge::Configuration::DEFAULT_CHAT_FACTORY
+
+      without_provider_credentials { Concierge::Run.reactive(@subject, "hi") }
+
+      run = Concierge::AgentRun.order(:id).last
+
+      assert_equal "failed", run.status
+      assert_equal "RubyLLM::ConfigurationError", run.error_class
+      assert_nil run.chat_id
+    end
+
     test "a tool call during the run mutates only this subject's data" do
       other = Tenant.create!(name: "Beta", plan: "free")
       Concierge::Test::FakeChat.script(
