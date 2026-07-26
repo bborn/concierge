@@ -5,13 +5,14 @@ module Concierge
   # An optional +agent+ parameter picks which business function answers; omitted,
   # it is the default +:csm+ agent, so an existing single-agent host's widget
   # keeps posting exactly what it posted before.
+  #
+  # The account comes out of the URL, so who may name it is the host's call:
+  # ScopedEndpoint refuses the turn unless +config.authorize_subject+ says yes.
   class ChatsController < ApplicationController
-    def create
-      return render json: { error: "unknown agent" }, status: :not_found unless agent
+    include ScopedEndpoint
 
-      subject = Concierge.config.account.find_subject(params[:subject_id])
-      scope   = Concierge::Scope.new(agent, subject)
-      result  = Concierge::Run.reactive(scope, params[:message].to_s)
+    def create
+      result = Concierge::Run.reactive(scope, params[:message].to_s)
 
       if result.ok?
         render json: { reply: result.reply_text, agent: scope.agent_slug }
@@ -22,8 +23,10 @@ module Concierge
 
     private
 
-    def agent
-      @agent ||= Concierge.config.agent(params[:agent].presence || Configuration::DEFAULT_AGENT_SLUG)
+    # The widget renders whatever the endpoint says went wrong, so a refusal is
+    # JSON like every other answer here rather than an empty body.
+    def deny(status, message)
+      render json: { error: message }, status: status
     end
   end
 end

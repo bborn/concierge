@@ -68,6 +68,16 @@ module Dummy
       # current_user.email; without this hook the maker-checker gate refuses
       # rather than inventing an approver (design §10.2).
       c.admin_actor = ->(_controller) { "operator@acme.test" }
+
+      # ...and who may drive an account's agent over the engine's own endpoints.
+      # The chat and handoff endpoints take the account out of the URL, so
+      # without this a signed-in customer could hand-craft a POST naming another
+      # tenant's subject_id. The engine controllers are the *engine's*, not this
+      # app's, so there is no current_user on them: the session is the seam.
+      c.authorize_subject = lambda do |controller, scope|
+        user = User.find_by(id: controller.session[:user_id])
+        user && user.tenant_id.to_s == scope.subject.id.to_s
+      end
     end
 
     def rules(c)

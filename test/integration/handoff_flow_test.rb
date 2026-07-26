@@ -5,6 +5,10 @@ class HandoffFlowTest < ActionDispatch::IntegrationTest
     @tenant  = Tenant.create!(name: "Acme", plan: "pro", last_active_at: 1.day.ago)
     @tenant.users.create!(email: "a@acme.test")
     @subject = Concierge.config.account.build(@tenant)
+    # These endpoints fail closed without a host authorization hook; the gate
+    # itself is asserted in test/integration/subject_authorization_test.rb and
+    # test/integration/host_isolation_test.rb. Here the subject is the takeover.
+    Concierge::Test.authorize_all_subjects!
   end
 
   test "an operator can seize, send as human, and release a thread over HTTP" do

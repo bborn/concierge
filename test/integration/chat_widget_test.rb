@@ -4,6 +4,10 @@ class ChatWidgetTest < ActionDispatch::IntegrationTest
   setup do
     @tenant = Tenant.create!(name: "Acme", plan: "pro", last_active_at: 1.day.ago)
     @tenant.users.create!(email: "a@acme.test")
+    # The subject of these tests is the turn, not the gate: say the host said yes
+    # once, here, rather than in the baseline config — see
+    # Concierge::Test.authorize_all_subjects!.
+    Concierge::Test.authorize_all_subjects!
   end
 
   test "posting a message returns the agent's reply" do

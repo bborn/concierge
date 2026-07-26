@@ -1,0 +1,30 @@
+== sign in as Dana (Acme, tenant 4) ==
+signin: 302
+
+== her own account's widget POST (tenant 4) ==
+{"reply":"Publishing takes about a minute: open Changelog, hit New entry, write what shipped, then Publish. You already have 1 draft waiting. You're on the pro plan, so it goes out to everyone following your changelog. Want to do it now?","agent":"csm"}
+HTTP 200
+
+== the hand-crafted cross-account POST: Globex is tenant 5 ==
+{"error":"not authorized for this account"}
+HTTP 403
+
+== ...and under the billing agent ==
+{"error":"not authorized for this account"}
+HTTP 403
+
+== seizing Globex's operator thread ==
+
+HTTP 403
+
+== releasing Globex's operator thread ==
+
+HTTP 403
+
+== an account that does not exist ==
+{"error":"not authorized for this account"}
+HTTP 403
+
+== signed out entirely (fresh cookie jar, valid CSRF token from /signin) ==
+{"error":"not authorized for this account"}
+HTTP 403

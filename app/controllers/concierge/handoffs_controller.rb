@@ -5,8 +5,15 @@ module Concierge
   # A takeover is per (agent, account): taking over the billing thread does not
   # silence the CSM. The optional +agent+ parameter says which one; omitted, it
   # is the default +:csm+ agent.
+  #
+  # These are the sharpest endpoints in the engine — seizing a thread speaks to a
+  # customer as your company — so they sit behind the same host authorization
+  # hook the chat endpoint does (+config.authorize_subject+), and refuse without
+  # one. A host whose operator console is staff-only checks for that in the hook:
+  # it is handed the controller, so +controller.request.path+ and its own session
+  # are both in reach.
   class HandoffsController < ApplicationController
-    before_action :require_agent!
+    include ScopedEndpoint
 
     def create
       Handoff.seize!(scope, operator: params[:operator])
@@ -22,20 +29,6 @@ module Concierge
     def destroy
       Handoff.active_for(scope)&.release!
       head :no_content
-    end
-
-    private
-
-    def scope
-      @scope ||= Concierge::Scope.new(agent, Concierge.config.account.find_subject(params[:subject_id]))
-    end
-
-    def agent
-      @agent ||= Concierge.config.agent(params[:agent].presence || Configuration::DEFAULT_AGENT_SLUG)
-    end
-
-    def require_agent!
-      head :not_found unless agent
     end
   end
 end
