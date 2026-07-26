@@ -38,6 +38,7 @@ require_relative "support/stubbed_provider"
 require_relative "support/dummy_config"
 require_relative "support/slack_transport"
 require_relative "support/host_app"
+require_relative "support/broken_queue"
 
 # Load fixtures from the engine
 if ActiveSupport::TestCase.respond_to?(:fixture_paths=)

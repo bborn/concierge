@@ -208,6 +208,18 @@ module Concierge
       def hand_off_execution(proposal, metadata)
         return nil unless proposal.approved? && !proposal.human_execution?
 
+        # Stamped on the row, not just handed to the card. The card is told by
+        # +executing:+ because this request knows; /concierge/admin/proposals is
+        # not this request and has only the row, which without this reads
+        # "approved, not yet dispatched" — the same words as an approval nobody
+        # handed to anything. An operator watching a slow executor could not tell
+        # "running right now" from "stuck, needs a Retry".
+        #
+        # Before the enqueue, deliberately: an inline queue adapter runs the job
+        # inside perform_later, and Proposal::Execute clears this stamp on its way
+        # out. Stamping afterwards would write "queued" onto a row that had
+        # already finished, and nothing would ever clear it again.
+        proposal.update_columns(execution_queued_at: Time.current, updated_at: Time.current)
         ProposalExecutionJob.perform_later(
           proposal.id,
           by: actor,
@@ -219,11 +231,29 @@ module Concierge
         # The decision is already durable and must stay that way. An enqueue that
         # failed leaves an approved, unperformed row exactly where step 3 put every
         # other unperformed approval: visible in the admin queue, for a human.
+        #
+        # And it must not leave the stamp behind. Nothing was enqueued, so nothing
+        # will ever clear it: the queue would promise a job that does not exist,
+        # forever, which is the exact dishonesty the stamp was added to prevent.
+        unstamp_queued(proposal)
         Concierge.logger&.error(
           "[concierge] proposal #{proposal.id} was approved but could not be queued for " \
           "execution: #{e.class}: #{e.message}"
         )
         :failed
+      end
+
+      # Swallowed like the card update is, and for the same reason: this runs on a
+      # path that is already reporting a failure, and raising here would turn a
+      # recorded decision into a 500. A stamp left behind by a database that will
+      # not take writes is the smaller problem, and it is logged.
+      def unstamp_queued(proposal)
+        proposal.update_columns(execution_queued_at: nil, updated_at: Time.current)
+      rescue StandardError => e
+        Concierge.logger&.error(
+          "[concierge] proposal #{proposal.id} could not be queued and the queued marker " \
+          "could not be cleared either: #{e.class}: #{e.message}"
+        )
       end
 
       def unqueued_message(proposal)

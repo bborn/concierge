@@ -259,6 +259,11 @@ module Concierge
       assert_equal "approved", acme_row.reload.state
       assert_equal 0, Concierge::ChannelDelivery.for_scope(acme).count
       assert_equal "proposed", Concierge::AgentProposal.for_scope(globex).sole.state
+      # The "something is queued" marker the admin queue reads is a row write like
+      # any other, so it is scoped like any other: one click marks one cell.
+      assert acme_row.execution_queued?
+      refute Concierge::AgentProposal.for_scope(globex).sole.execution_queued?,
+             "queueing one cell's execution marked a neighbour's row as queued"
 
       perform_enqueued_jobs
 
@@ -270,6 +275,7 @@ module Concierge
                    "a queued billing execution was audited under the CSM"
       assert_equal "proposed", Concierge::AgentProposal.for_scope(globex).sole.state,
                    "a queued execution decided another cell's proposal"
+      refute acme_row.reload.execution_queued?, "the row still promises a run that already happened"
       # And the card it redrew afterwards went back to its own agent's channel.
       assert_equal [ "C0BILLING" ], transport.calls_to("chat.update").map { |call| call.payload[:channel] }.uniq
     end
@@ -311,7 +317,7 @@ module Concierge
       globex_row = rows[:globex].reload
       assert_equal "approved", globex_row.state
       assert globex_row.execution_failed?, "a retry of one cell cleared another cell's failure"
-      refute globex_row.execution_retry_queued?
+      refute globex_row.execution_queued?
     end
 
     test "a guard rule blocks execution only inside the cell that owns it" do

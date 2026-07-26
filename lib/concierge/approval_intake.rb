@@ -117,7 +117,9 @@ module Concierge
       # was never attempted, with the previous failure erased and nothing in its
       # place. So the queued retry is stamped on the row, where the admin queue and
       # any card that redraws can both see it, and Proposal::Execute clears it
-      # again the moment it has a real outcome to report.
+      # again the moment it has a real outcome to report. A first execution handed
+      # to a job stamps the same column (Slack::Intake#hand_off_execution), so a
+      # queue view reads one sentence for both.
       #
       # Returns the execution status when it executed, +:approved+ when it left the
       # doing to someone else — the same two answers +approve+ gives.
@@ -125,7 +127,7 @@ module Concierge
         actor = assert_human!(by, "retry")
         assert_retryable!(proposal)
         proposal.update_columns(execution_error: nil, execution_failed_at: nil,
-                                execution_retry_queued_at: (Time.current unless execute),
+                                execution_queued_at: (Time.current unless execute),
                                 updated_at: Time.current)
         return :approved unless execute
 
@@ -168,7 +170,7 @@ module Concierge
       # Proposal::Execute always ran straight afterwards and refused with
       # +:not_approved+.
       #
-      # +execute: false+ ended that. It stamps execution_retry_queued_at and hands
+      # +execute: false+ ended that. It stamps execution_queued_at and hands
       # the doing to a surface whose own guard is "approved and not
       # human_execution" (Slack::Intake#hand_off_execution) — so a deferred retry
       # aimed at a rejected row is never queued, Execute never runs, and the only

@@ -15,6 +15,7 @@ module Concierge
   # than assumed.
   class SlackIntakeTest < ActiveSupport::TestCase
     include ActiveJob::TestHelper
+    include Concierge::Test::BrokenQueue
 
     # Long enough that half of it is still far more than the handler's real work,
     # short enough not to matter to the suite. Stands in for the host executor
@@ -55,6 +56,51 @@ module Concierge
       assert row.approved_at.present?
       # ...and the *doing* has not happened inside the request.
       assert_equal "pro", @tenant.reload.plan, "the executor ran inside the Slack request"
+    end
+
+    test "Approve stamps the row queued, for every surface that did not queue it" do
+      # +executing:+ tells this request's card. Nothing else is in this request:
+      # /concierge/admin/proposals reads the row, and "approved, queued, running"
+      # and "approved, nobody dispatched it" are the same three columns without
+      # this. The stamp is written before the enqueue on purpose — an inline queue
+      # adapter runs the job inside perform_later, and Proposal::Execute clears the
+      # stamp on its way out, so stamping afterwards would mark a finished row
+      # queued with nothing left to clear it.
+      row = propose
+
+      Concierge::Slack::Intake.handle(click(Concierge::Slack::Card::APPROVE, row))
+
+      assert row.reload.execution_queued?, "a queued first execution left no trace on the row"
+      assert_match "queued to be performed",
+                   JSON.generate(@transport.last("chat.update").payload[:blocks])
+
+      perform_enqueued_jobs
+
+      row.reload
+      assert_equal "executed", row.state
+      refute row.execution_queued?, "the row still promises a run that already happened"
+    end
+
+    test "an enqueue that fails leaves the decision and no promise of a job" do
+      # hand_off_execution answers :failed here, and the clicker is told the
+      # approval is recorded and waiting. What must not survive is the stamp:
+      # nothing was enqueued, so nothing will ever clear it, and the admin queue
+      # would say "queued to be performed" about a run that was never scheduled.
+      row = propose
+
+      result = nil
+      with_broken_queue do
+        result = Concierge::Slack::Intake.handle(click(Concierge::Slack::Card::APPROVE, row))
+      end
+
+      assert_equal :refused, result.status
+      row.reload
+      assert_equal "approved", row.state, "a failed enqueue undid the decision"
+      refute row.execution_queued?, "the queue promises a job that was never enqueued"
+      assert_match(/could not be queued to run/, @transport.last("chat.postEphemeral").payload[:text])
+      # ...and the card it redrew does not claim a run is coming either.
+      refute_match "queued to be performed",
+                   JSON.generate(@transport.last("chat.update").payload[:blocks])
     end
 
     test "a slow host executor cannot blow Slack's three-second interactivity budget" do

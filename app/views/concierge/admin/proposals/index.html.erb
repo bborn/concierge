@@ -165,12 +165,15 @@
           <% elsif proposal.execution_error.present? %>
             <strong><%= proposal.execution_error %></strong>
             <%= "(#{proposal.execution_failed_at})" if proposal.execution_failed? %>
-          <% elsif proposal.execution_retry_queued? %>
-            <%# A retry cleared the failure that used to be printed here. Saying so
-                is the whole reason it is stamped on the row: without this line the
-                proposal would read "approved, nothing wrong" while the previous
-                error is gone and nothing has replaced it. %>
-            a retry was queued at <%= proposal.execution_retry_queued_at %> —
+          <% elsif proposal.execution_queued? %>
+            <%# Something has this and has not reported back — a first execution a
+                Slack Approve handed to a job, or a retry that cleared the failure
+                that used to be printed here. This screen is not the caller that
+                queued either, so it reads the row: without this line both would
+                say "approved, not yet dispatched", which is what a proposal
+                nobody dispatched says, and an operator watching a slow executor
+                could not tell "running" from "stuck, needs a Retry". %>
+            queued to be performed at <%= proposal.execution_queued_at %> —
             it clears when the executor reports back
           <% else %>
             approved, not yet dispatched
@@ -181,8 +184,8 @@
             <%= button_to "I performed this", admin_proposal_path(proposal), method: :patch,
                   params: { transition: "executed" } %>
           <% else %>
-            <%# Still offered while a retry is queued: a queue that never runs is
-                exactly when an operator needs the browser's inline path back. %>
+            <%# Still offered while an execution is queued: a queue that never runs
+                is exactly when an operator needs the browser's inline path back. %>
             <%= button_to "Retry execution", admin_proposal_path(proposal), method: :patch,
                   params: { transition: "retry" } %>
           <% end %>
