@@ -7,6 +7,15 @@ module Concierge
   #     goals "Get each account to publish."   # writes
   #   end
   #   config.playbook.goals                    # reads
+  #
+  # The second rule, which every collection in the config surface has to obey:
+  # a declaration is **total, not cumulative**. Saying the same thing twice says
+  # it once. A host's +Concierge.configure+ lives in its initializer, which Rails
+  # re-runs inside +to_prepare+ on *every* code reload in development, while the
+  # memoized Configuration survives the reload (the gem is not reloadable). So a
+  # collection that appends grows one more copy of the host's whole declaration
+  # per reload — see Capability::Registry#register and Playbook#account_types,
+  # which key on identity rather than piling up.
   module DSL
     # +name(value)+ writes, +name+ reads. An optional block coerces on write.
     def dsl_value(name, &coerce)

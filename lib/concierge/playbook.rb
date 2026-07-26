@@ -31,8 +31,12 @@ module Concierge
     dsl_value :product_brief
     dsl_value :goals
 
+    # The kinds of account this playbook knows about. Declaring a type twice
+    # declares it once: +Concierge::Agent#playbook+ memoizes, so a host whose
+    # initializer re-runs on every code reload would otherwise get one more copy
+    # of its type list per reload.
     def account_types(*names)
-      @account_types.concat(names.flatten.map(&:to_sym)) if names.any?
+      @account_types |= names.flatten.map(&:to_sym) if names.any?
       @account_types
     end
 

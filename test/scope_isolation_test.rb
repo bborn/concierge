@@ -442,6 +442,31 @@ module Concierge
       end
     end
 
+    # Slot 3 is the dimension the whole grid rests on: an agent's tool scope is
+    # what decides which rows it can reach at all. The host declares it in an
+    # initializer that runs inside +to_prepare+, which re-runs on every Rails
+    # code reload while the memoized Configuration survives it — so "the host
+    # said this again" must never mean "the agent may do this twice" (#4998).
+    test "re-running the host's config leaves every cell's tool scope untouched" do
+      before = @grid.keys.to_h { |cell| [ cell, tools_handed_to_the_model(cell) ] }
+
+      3.times { Concierge::Test.configure_agents! }
+
+      @grid.each_key do |cell|
+        after = tools_handed_to_the_model(cell)
+
+        assert_equal before[cell], after,
+                     "#{cell.inspect}'s tool scope changed when the initializer re-ran"
+        assert_equal after.uniq, after, "#{cell.inspect} was handed a duplicate tool"
+      end
+
+      # ...and the two agents are still as far apart as they were: billing reads
+      # and writes its own notes and nothing else, however many times the host's
+      # initializer has run.
+      assert_equal %w[recall remember], tools_handed_to_the_model([ :billing, :acme ])
+      assert_includes tools_handed_to_the_model([ :csm, :acme ]), "set_outreach_preference"
+    end
+
     test "for_subject resolves the default agent rather than widening to all of them" do
       # The §10.9 shim. Widening the oldest scope in the codebase to "every
       # agent" would be the leak this whole phase exists to prevent.
@@ -546,6 +571,15 @@ module Concierge
 
     def agent(slug)
       Concierge.config.agent(slug)
+    end
+
+    # What +chat.with_tools+ was actually given for this cell — the real path
+    # through Run#attach_tools, not the registry read on its own.
+    def tools_handed_to_the_model(cell)
+      Concierge::Test::FakeChat.script(reply: "ok")
+      chat = Concierge::Test::FakeChat.current
+      Concierge::Run.reactive(@grid[cell], "hi")
+      chat.tools.map(&:name)
     end
 
     def subject_for(tenant)
