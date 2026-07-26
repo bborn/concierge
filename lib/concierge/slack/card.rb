@@ -29,10 +29,13 @@ module Concierge
       INPUT_ACTION  = "value".freeze
 
       # +executing+ says the decision has just been handed to
-      # ProposalExecutionJob and the executor has not run yet. It is the one thing
-      # about a decided proposal that is not on the row: "approved, nothing
-      # recorded" and "approved, queued and running right now" are the same three
-      # columns, and only the caller that queued it knows which is true.
+      # ProposalExecutionJob and the executor has not run yet. The row carries the
+      # same fact (execution_queued_at, stamped by whoever queued it), because a
+      # surface that did *not* queue it — the admin queue, a later redraw — has
+      # nothing else to read: "approved, nothing recorded" and "approved, queued
+      # and running right now" are otherwise the same three columns. This flag
+      # stays as the in-request override, for the caller that knows before the row
+      # is re-read.
       def initialize(proposal, executing: false)
         @proposal  = proposal
         @executing = executing
@@ -249,12 +252,12 @@ module Concierge
         return "not performed: #{proposal.execution_error}" if proposal.execution_error.present?
         # Deliberately not "executing" or "done in a moment": what is true is that
         # it is queued. If nothing ever runs the queue, this card has said so.
-        return "queued to be performed — this card updates when it is" if @executing
-        # The same sentence for a retry, except this one is read off the row. A
-        # retry cleared the failure that used to be printed above, so a card that
-        # redrew for any other reason would otherwise go quiet about a proposal it
-        # had just been shouting about.
-        return "a retry is queued — this card updates when it is performed" if proposal.execution_retry_queued?
+        #
+        # Two sources, one sentence. +@executing+ is this request telling the card
+        # what it just did; the row is for every other redraw — a retry queued
+        # from elsewhere, an ExecutionReport, a card rebuilt from scratch — none of
+        # which were the caller that queued anything.
+        return "queued to be performed — this card updates when it is" if @executing || proposal.execution_queued?
 
         "not performed yet"
       end

@@ -262,11 +262,11 @@ module Concierge
       proposal = Proposal.propose(@billing, action_class: "record.update")
       proposal.update!(state: "approved", approved_by: "sam@acme.test", approved_at: Time.current)
       ApprovalIntake.retry_execution(proposal, by: "sam@acme.test", execute: false)
-      assert proposal.reload.execution_retry_queued?
+      assert proposal.reload.execution_queued?
 
       assert_equal :no_executor, Proposal::Execute.call(proposal)
 
-      refute proposal.reload.execution_retry_queued?
+      refute proposal.reload.execution_queued?
     end
 
     test "an executor may be registered by prefix, and the most specific one wins" do

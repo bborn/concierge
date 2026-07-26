@@ -132,7 +132,7 @@ module Concierge
       row.reload
       assert_equal "executed", row.state
       assert_equal "enterprise", @tenant.reload.plan
-      refute row.execution_retry_queued?, "the queue is still promising a retry that already ran"
+      refute row.execution_queued?, "the queue is still promising a retry that already ran"
     end
 
     test "a deferred retry that fails again records the new failure, not the old silence" do
@@ -149,7 +149,7 @@ module Concierge
       row.reload
       assert_equal "approved", row.state
       assert_match(/the billing API was down again/, row.execution_error)
-      refute row.execution_retry_queued?
+      refute row.execution_queued?
     end
 
     test "with no Slack target it still executes and says nothing" do

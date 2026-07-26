@@ -152,7 +152,7 @@ module Concierge
 
       ApprovalIntake.retry_execution(proposal, by: "sam@acme.test", execute: false)
 
-      assert proposal.reload.execution_retry_queued?
+      assert proposal.reload.execution_queued?
     end
 
     test "retrying refuses every row that has no approved action to re-attempt" do
@@ -166,7 +166,7 @@ module Concierge
         proposal.update_columns(state: state,
                                 execution_error: "Net::ReadTimeout: the API did not answer",
                                 execution_failed_at: Time.current,
-                                execution_retry_queued_at: nil)
+                                execution_queued_at: nil)
 
         error = assert_raises(Proposal::GateError, "retry wrote to a #{state} row") do
           ApprovalIntake.retry_execution(proposal, by: "sam@acme.test", execute: false)
@@ -179,7 +179,7 @@ module Concierge
         proposal.reload
         assert proposal.execution_failed?, "a refused retry erased a #{state} row's failure"
         assert_equal "Net::ReadTimeout: the API did not answer", proposal.execution_error
-        refute proposal.execution_retry_queued?,
+        refute proposal.execution_queued?,
                "a refused retry told every surface a #{state} row had a retry coming"
       end
     end
@@ -196,7 +196,7 @@ module Concierge
         ApprovalIntake.retry_execution(proposal, by: "sam@acme.test", execute: false)
       end
 
-      refute proposal.reload.execution_retry_queued?
+      refute proposal.reload.execution_queued?
     end
 
     test "retrying inline stays the default, and leaves no queued-retry stamp behind" do
@@ -207,7 +207,7 @@ module Concierge
       proposal.reload
       assert proposal.executed?
       assert_equal 1, ChannelDelivery.count
-      refute proposal.execution_retry_queued?,
+      refute proposal.execution_queued?,
              "an execution that already happened is not still queued"
     end
 

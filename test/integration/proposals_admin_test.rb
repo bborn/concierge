@@ -191,7 +191,7 @@ class ProposalsAdminTest < ActionDispatch::IntegrationTest
 
     get "/concierge/admin/proposals"
 
-    assert_includes response.body, "a retry was queued at"
+    assert_includes response.body, "queued to be performed at"
     refute_includes response.body, "approved, not yet dispatched"
     # ...and the browser's inline path is still offered, because a queue that
     # never runs is exactly when an operator needs it.
@@ -216,7 +216,7 @@ class ProposalsAdminTest < ActionDispatch::IntegrationTest
                  flash[:alert]
     proposal.reload
     assert proposal.rejected?
-    refute proposal.execution_retry_queued?
+    refute proposal.execution_queued?
   end
 
   test "an unknown transition is refused rather than guessed at" do
