@@ -250,12 +250,19 @@ Concierge::ApprovalIntake.reject(
 # human taps Approve. Nothing below activates itself.
 
 # Three in force, one of them account-specific, one a code-enforced guard.
+#
+# A rule is an instruction a human put in force over the agent's own judgement,
+# so what gets seeded here is also an example of what such an instruction may
+# ask for. Tone, phrasing and what to point at: yes. Hiding what the agent is:
+# no — if a customer asks whether they are talking to a bot, the answer is yes,
+# and no rule in this demo pretends otherwise.
 in_force = [
   [ :csm,     nil,  :agent,
     "Never promise or imply a delivery date; point them at the status page instead.",
     "advisory", nil ],
   [ :csm,     acme, :subject,
-    "Acme's CEO is skeptical of AI tooling — keep the tone low-key and never mention automation.",
+    "Acme's CEO is skeptical of AI tooling — keep the tone low-key and understated; " \
+    "no hype, no exclamation marks.",
     "advisory", nil ],
   [ :billing, nil,  :agent,
     "Never put the word \"guarantee\" in a billing email.",
