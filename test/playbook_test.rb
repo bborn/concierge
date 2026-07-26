@@ -26,6 +26,17 @@ class PlaybookTest < ActiveSupport::TestCase
     assert_equal Concierge::Playbook::DEFAULT_PERSONA.voice, playbook.persona.voice
   end
 
+  test "an account type declared twice is declared once" do
+    # Concierge::Agent#playbook memoizes, and a host's config block re-runs on
+    # every Rails code reload — so a concatenating list grows a copy per reload.
+    playbook = Concierge::Playbook.new
+    playbook.account_types :brand, :creator
+    playbook.account_types :brand, :creator
+    playbook.account_types :agency
+
+    assert_equal %i[brand creator agency], playbook.account_types
+  end
+
   test "engagement signals preserve registration order" do
     assert_equal %i[has_paid_plan user_count days_since_active],
                  Concierge.config.playbook.engagement_signals.keys

@@ -4,6 +4,13 @@ module Concierge
   # The plural config DSL and its six slots (design §10.1), plus the §10.9
   # back-compat rule: a host that never calls +config.agent+ *is* the CSM.
   class AgentTest < ActiveSupport::TestCase
+    # A tool the host owns rather than the gem, so a test can register something
+    # the baseline configuration does not already carry.
+    class HostAuditTool < Concierge::Capability::NativeTool
+      description "Record an audit note."
+      def perform(**) = "audited"
+    end
+
     test "an un-pluralized host is the implicit :csm agent" do
       agent = Concierge.config.agent
 
@@ -39,9 +46,52 @@ module Concierge
       agent = Concierge.config.agent
       before = agent.capabilities.entries.size
 
-      Concierge.configure { |c| c.capabilities { register Concierge::Tools::ForgetTool, access: :write } }
+      Concierge.configure { |c| c.capabilities { register HostAuditTool, access: :write } }
 
       assert_equal before + 1, agent.capabilities.entries.size
+      assert_includes agent.capabilities.entries.map(&:tool_class), HostAuditTool
+    end
+
+    # The reload bug (#4998), at the level the host actually meets it: a host's
+    # +Concierge.configure+ lives in +Rails.application.config.to_prepare+, which
+    # re-runs on every code reload, while the memoized Configuration survives it
+    # (the gem is not reloadable). Every config block therefore has to be
+    # declarative-and-total: saying the same thing twice must mean it once.
+    test "re-running the host's configuration does not grow an agent's slots" do
+      Concierge::Test.configure_agents!
+      Concierge.configure do |c|
+        c.agent(:csm) { playbook { account_types :brand, :creator } }
+      end
+
+      csm = Concierge.config.agent(:csm)
+      tools   = csm.capabilities.entries.map { |e| [ e.tool_class, e.access ] }
+      types   = csm.playbook.account_types.dup
+      signals = csm.playbook.engagement_signals.keys
+
+      3.times do
+        Concierge::Test.configure_agents!
+        Concierge.configure do |c|
+          c.agent(:csm) { playbook { account_types :brand, :creator } }
+        end
+      end
+
+      assert_same csm, Concierge.config.agent(:csm)
+      assert_equal tools, csm.capabilities.entries.map { |e| [ e.tool_class, e.access ] }
+      assert_equal types, csm.playbook.account_types
+      assert_equal signals, csm.playbook.engagement_signals.keys
+      assert_equal 2, Concierge.config.agents.size
+    end
+
+    # ...and the same for the §10.9 single-agent host, whose tool scope hangs off
+    # the top-level block rather than an agent block. That form predates Phase 10
+    # and has been accumulating for longer.
+    test "re-running the host's configuration does not grow the top-level tool scope" do
+      before = Concierge.config.capabilities.entries.map { |e| [ e.tool_class, e.access ] }
+
+      3.times { Concierge::Test.configure! }
+
+      assert_equal before, Concierge.config.capabilities.entries.map { |e| [ e.tool_class, e.access ] }
+      assert_equal %i[brand creator], Concierge.config.agent.playbook.account_types
     end
 
     test "two agents coexist with distinct personas, models, tools and authority" do

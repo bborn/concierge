@@ -12,6 +12,14 @@ module Concierge
     # Write tools are only included when writes are granted for the run (default
     # on — the agent is autonomous within caps — but a caller can pass
     # include_writes: false to drop them).
+    #
+    # Registration is **declarative**: a tool is registered once no matter how
+    # many times the host declares it. That is not a nicety. A host's
+    # +Concierge.configure+ lives in +to_prepare+, which re-runs on every Rails
+    # code reload, while the Configuration itself survives the reload (the gem is
+    # not reloadable) — so an appending registry grows one full copy of the tool
+    # list per reload in development, and hands +chat.with_tools+ the same tool
+    # five times.
     class Registry
       Entry = Struct.new(:tool_class, :access)
 
@@ -19,8 +27,13 @@ module Concierge
         @entries = []
       end
 
+      # Declare a tool. Re-declaring one replaces it in place — same position,
+      # new access grant, new class object — rather than appending a duplicate.
       def register(tool_class, access: :read)
-        @entries << Entry.new(tool_class, access.to_sym)
+        entry = Entry.new(tool_class, access.to_sym)
+        found = @entries.index { |e| identity(e.tool_class) == identity(tool_class) }
+
+        found ? @entries[found] = entry : @entries << entry
         self
       end
 
@@ -43,6 +56,18 @@ module Concierge
 
           entry.tool_class.new(subject: subject, run: run, scope: scope)
         end
+      end
+
+      private
+
+      # A tool's identity is its *name*, not the Class object. A host tool that
+      # lives in the host's +app/+ is a brand-new Class object after every code
+      # reload, so keying on object identity would let host tools pile up exactly
+      # the way gem tools used to — and would leave the registry pointing at the
+      # stale, unloaded class. Anonymous classes (tests) have no name, so they
+      # fall back to themselves.
+      def identity(tool_class)
+        tool_class.name || tool_class
       end
     end
   end
