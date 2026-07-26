@@ -337,6 +337,50 @@ The two seams meet cleanly:
 
 One direction never has to know about the other's transport.
 
+### A surface can have a deadline; an executor cannot promise to meet it
+
+**The decision is synchronous. The execution belongs to whoever can afford to
+wait for it.** Slack answers a `POST /concierge/slack/interactions` with an error
+if the endpoint takes more than about three seconds. A host executor for
+`record.*` or `money.*` — an external API, a payment provider — has no such
+budget, and the actions with the slowest executors are exactly the ones this seam
+exists to gate. Executing inside the interactivity request means an operator is
+shown a failure for a decision that landed *and* executed: the row is right and
+the human is told it is wrong, which is precisely the confusion §10.7 prevents
+everywhere else.
+
+So the handler order splits across the request boundary, and only there:
+
+```
+in the request:  1. verify the signature
+                 2. write the decision to the AgentProposal row   (it *is* the record)
+                 3. enqueue Concierge::ProposalExecutionJob
+                 4. redraw the card: "approved, queued to be performed"
+in the job:      5. Proposal::Execute
+                 6. redraw the card with the outcome; whisper a refusal to the clicker
+```
+
+What this does **not** change:
+
+- **Everything an operator is answerable for is still durable before the surface
+  answers** — who approved, when, and what they approved. Only the doing moves.
+- **`ApprovalIntake.approve(proposal, by:, execute: false)`** is the seam's
+  existing opt-out, not a new one. A surface chooses whether it can wait.
+- **The job holds no policy.** It re-enters `Proposal::Execute`, so all six
+  refusals (§10.6) are re-checked *at the moment it runs*, which is later than
+  before and therefore more current — an ops halt between the click and the job
+  still stops the work.
+- **At-most-once survives the queue.** Execute claims the row with a conditional
+  `UPDATE`, so an ActiveJob retry performs the action once.
+- **A deferred refusal is still a refusal.** "Approved but not performed" reaches
+  the person who clicked, from the process that found it out. A surface that
+  deferred execution and then reported success would be the original bug wearing
+  a different hat.
+
+Surfaces without a deadline keep executing inline — `/concierge/admin/proposals`
+runs in a browser, which has no three-second ceiling, and its synchronous path is
+what makes the ordering assertable end to end.
+
 ---
 
 ## 10.8 Engine authority vs host invariants — the boundary

@@ -110,6 +110,12 @@ module Dummy
         # A record mutation the engine performs *after* a human approves it. It
         # gets the resolved Scope, so it never looks an account up by a raw id.
         execute "record.plan_change" do |proposal, scope|
+          # A knob, not a feature: `SLOW_EXECUTOR=4` makes this host executor take
+          # longer than Slack is willing to wait, which is the only way to see by
+          # hand that the interactivity endpoint no longer waits for it (§10.7).
+          # Every real host executor that talks to a payment provider is this,
+          # without the env var.
+          sleep Float(ENV["SLOW_EXECUTOR"]) if ENV["SLOW_EXECUTOR"].present?
           scope.subject.to_model.update!(plan: proposal.action_arguments[:to])
         end
 

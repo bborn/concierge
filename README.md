@@ -361,8 +361,24 @@ A proposal arrives as a Block Kit card with **Approve**, **Reject** and
 **Correct**. The handler order is fixed:
 
 ```
-signed payload → write the decision to the proposal row → execute → update the card
+in the request:  signed payload → write the decision to the proposal row
+                 → enqueue Concierge::ProposalExecutionJob → update the card
+in the job:      Proposal::Execute → update the card again
 ```
+
+**The decision is synchronous; the doing is not.** Slack answers an interactivity
+POST with an error if the endpoint takes more than about three seconds, and a host
+executor that calls a payment provider cannot promise that — so an operator would
+be shown a failure for a decision that had actually landed *and* executed. The
+approval is durable before Slack gets its 200; the card first says *"approved,
+queued to be performed"* and is redrawn with the outcome when the job finishes. If
+the execution is refused (an expired precondition, a guard rule, a disabled
+agent), the job whispers that back to whoever clicked — deferring may not lose a
+refusal. Any queue works; the job holds no policy and re-enters `Proposal::Execute`,
+whose refusals are therefore checked at the moment it runs.
+
+The admin form at `/concierge/admin/proposals` still executes inline: a browser
+has no three-second ceiling.
 
 The card is updated **last** and is allowed to fail. Postgres is the record; a
 stale card with a correct row is recoverable, and the reverse would be a decision

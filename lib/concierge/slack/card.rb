@@ -28,8 +28,14 @@ module Concierge
       PAYLOAD_PREFIX = "concierge_payload:".freeze
       INPUT_ACTION  = "value".freeze
 
-      def initialize(proposal)
-        @proposal = proposal
+      # +executing+ says the decision has just been handed to
+      # ProposalExecutionJob and the executor has not run yet. It is the one thing
+      # about a decided proposal that is not on the row: "approved, nothing
+      # recorded" and "approved, queued and running right now" are the same three
+      # columns, and only the caller that queued it knows which is true.
+      def initialize(proposal, executing: false)
+        @proposal  = proposal
+        @executing = executing
       end
 
       # The card as posted. A proposal awaiting a human gets buttons; anything
@@ -238,6 +244,9 @@ module Concierge
       def unexecuted_reason
         return "the engine does not perform this one; you do" if proposal.human_execution?
         return "not performed: #{proposal.execution_error}" if proposal.execution_error.present?
+        # Deliberately not "executing" or "done in a moment": what is true is that
+        # it is queued. If nothing ever runs the queue, this card has said so.
+        return "queued to be performed — this card updates when it is" if @executing
 
         "not performed yet"
       end

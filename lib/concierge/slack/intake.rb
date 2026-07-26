@@ -14,8 +14,19 @@ module Concierge
     #
     #   1. **signed payload** — the controller, before a single write;
     #   2. **write the decision to the proposal row** — who, when, what;
-    #   3. **execute** — from that approved row and nothing else;
-    #   4. **update the card.**
+    #   3. **hand execution to Concierge::ProposalExecutionJob** — which performs
+    #      it from that approved row and nothing else, and redraws the card again
+    #      with what happened;
+    #   4. **update the card** to say the decision landed and is queued.
+    #
+    # Step 3 used to be "execute, right here." It moved because Slack answers an
+    # interactivity POST with an error if this endpoint takes more than about three
+    # seconds, and a host executor — a payment provider, an external API — cannot
+    # promise that. The operator would be shown a failure for a decision that
+    # landed *and* executed, which is exactly the confusion this seam exists to
+    # prevent. The **decision** still writes synchronously, because it is the
+    # record; only the doing is deferred. The admin form keeps executing inline: a
+    # browser has no three-second ceiling.
     #
     # Step 4 is last and is allowed to fail. Postgres is the record; the card is a
     # view of it. A failed `chat.update` leaves a stale card and a correct row,
@@ -76,7 +87,10 @@ module Concierge
         return refuse(no_actor_message) if actor.blank?
 
         case action["action_id"]
-        when Card::APPROVE       then decide(proposal) { ApprovalIntake.approve(proposal, by: actor) }
+        when Card::APPROVE
+          decide(proposal, defer_execution: true) do
+            ApprovalIntake.approve(proposal, by: actor, execute: false)
+          end
         when Card::MARK_EXECUTED then decide(proposal) { ApprovalIntake.record_execution(proposal, by: actor) }
         when Card::REJECT        then open_modal(Card.new(proposal).reject_modal(metadata_for(proposal)))
         when Card::CORRECT       then open_modal(Card.new(proposal).correct_modal(metadata_for(proposal)))
@@ -116,8 +130,8 @@ module Concierge
         note      = input(view, Card::RULE_BLOCK)
         block_id  = first_payload_block(proposal) || Card::RULE_BLOCK
 
-        result = decide(proposal, metadata, on_refusal: in_modal(block_id)) do
-          ApprovalIntake.correct(proposal, by: actor, payload: corrected)
+        result = decide(proposal, metadata, on_refusal: in_modal(block_id), defer_execution: true) do
+          ApprovalIntake.correct(proposal, by: actor, payload: corrected, execute: false)
         end
 
         # The rule write path (§10.2) opens only if the correction actually landed
@@ -162,17 +176,23 @@ module Concierge
 
       # --- the ordered handler --------------------------------------------------
 
-      # Write the decision, execute, *then* redraw the card. The block does 2 and
-      # 3 (ApprovalIntake.approve executes from the row it just wrote); this method
-      # owns 4 and the fact that 4 cannot undo them.
+      # Write the decision, hand execution off, *then* redraw the card. The block
+      # does 2; this method owns 3 and 4, and the fact that 4 cannot undo either.
       # +on_refusal+ is how the same refusal reaches a human in two very different
       # places: a click has a channel to whisper into, a modal submission has only
       # the modal.
-      def decide(proposal, metadata = nil, on_refusal: nil)
+      #
+      # +defer_execution+ marks the decisions that leave something for an executor
+      # to do. Rejecting and marking-as-executed write a row and stop there, so
+      # they have nothing to queue and nothing to wait for.
+      def decide(proposal, metadata = nil, on_refusal: nil, defer_execution: false)
         on_refusal ||= method(:refuse)
-        outcome = yield
+        outcome  = yield
         proposal.reload
-        refresh_card(proposal, metadata || metadata_for(proposal))
+        metadata ||= metadata_for(proposal)
+        queued = defer_execution ? hand_off_execution(proposal, metadata) : nil
+        refresh_card(proposal, metadata, executing: queued == :queued)
+        return on_refusal.call(unqueued_message(proposal)) if queued == :failed
 
         report(proposal, outcome, on_refusal)
       rescue Concierge::Proposal::GateError => e
@@ -181,29 +201,61 @@ module Concierge
         on_refusal.call(e.message)
       end
 
+      # Step 3, and the only part of it that happens in this request. Returns
+      # +:queued+, +:failed+, or nil when there is nothing for the engine to
+      # perform — a +:human_execution+ proposal is approved here and carried out by
+      # the human themselves (§10.5), so queuing it would only produce a refusal.
+      def hand_off_execution(proposal, metadata)
+        return nil unless proposal.approved? && !proposal.human_execution?
+
+        ProposalExecutionJob.perform_later(
+          proposal.id,
+          by: actor,
+          slack: { "channel" => metadata["channel"], "ts" => metadata["ts"],
+                   "user" => payload.dig("user", "id") }
+        )
+        :queued
+      rescue StandardError => e
+        # The decision is already durable and must stay that way. An enqueue that
+        # failed leaves an approved, unperformed row exactly where step 3 put every
+        # other unperformed approval: visible in the admin queue, for a human.
+        Concierge.logger&.error(
+          "[concierge] proposal #{proposal.id} was approved but could not be queued for " \
+          "execution: #{e.class}: #{e.message}"
+        )
+        :failed
+      end
+
+      def unqueued_message(proposal)
+        "Proposal ##{proposal.id} was approved but could not be queued to run. " \
+        "The approval is recorded; it is waiting in /concierge/admin/proposals."
+      end
+
       # An approval whose execution was refused is not a success and must not be
       # reported as one — the property step 3 established on the admin queue,
       # preserved here because these buttons write the same rows.
+      #
+      # A deferred execution cannot be refused *here* any more: it has not run
+      # yet. ExecutionReport carries the identical sentence to the identical
+      # person once the job knows. This branch stays for the decisions that still
+      # resolve inside the request, and so that a surface that stops deferring
+      # cannot silently start reporting refusals as successes.
       def report(proposal, outcome, on_refusal)
         return OK if %i[executed rejected approved].include?(outcome)
 
-        on_refusal.call(
-          "Proposal ##{proposal.id} was approved but not performed " \
-          "(#{outcome.to_s.tr('_', ' ')})#{": #{proposal.execution_error}" if proposal.execution_error}. " \
-          "It is waiting in /concierge/admin/proposals."
-        )
+        on_refusal.call(ExecutionReport.refusal_message(proposal, outcome))
       end
 
       def in_modal(block_id)
         ->(message) { modal_error(block_id, message) }
       end
 
-      def refresh_card(proposal, metadata)
+      def refresh_card(proposal, metadata, executing: false)
         channel = metadata["channel"]
         ts      = metadata["ts"]
         return if channel.blank? || ts.blank?
 
-        card = Card.new(proposal)
+        card = Card.new(proposal, executing: executing)
         client.update_message(channel: channel, ts: ts, blocks: card.decided_blocks, text: card.text)
       rescue StandardError => e
         # Deliberately swallowed. The decision is already durable; a stale card is
