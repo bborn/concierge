@@ -151,6 +151,41 @@ module Concierge
                       Concierge::Slack::Card::CORRECT
     end
 
+    test "the card names the account by its key when the host set no label" do
+      # Byte-for-byte back-compat: this line has always read "account #7".
+      card = Concierge::Slack::Card.new(proposal)
+
+      assert_match "*billing* on *account ##{@tenant.id}*", JSON.generate(card.blocks)
+    end
+
+    test "the card names the account by the host's label when there is one" do
+      Concierge.config.subject_label = ->(subject) { Tenant.find_by(id: subject.id)&.name }
+
+      card = JSON.generate(Concierge::Slack::Card.new(proposal).blocks)
+
+      assert_match "*billing* on *Acme*", card
+      refute_match "account ##{@tenant.id}", card
+    end
+
+    test "a raising label leaves the card on the key rather than losing the card" do
+      Concierge.config.subject_label = ->(_subject) { raise "the host's lookup is broken" }
+
+      card = Concierge::Slack::Card.new(proposal)
+
+      assert_match "*billing* on *account ##{@tenant.id}*", JSON.generate(card.blocks)
+    end
+
+    test "a label that tries to ping the channel is neutralized like any other text" do
+      # A host's business name is no more trusted with Slack's escape syntax than
+      # a model's draft is (§2.6) — it goes through Text.safe too.
+      Concierge.config.subject_label = ->(_subject) { "<!channel> Acme" }
+
+      card = JSON.generate(Concierge::Slack::Card.new(proposal).blocks)
+
+      refute_match "<!channel>", card
+      assert_match "@channel Acme", card
+    end
+
     private
 
     def proposal(action_class: "record.plan_change", gate: "human_approval",

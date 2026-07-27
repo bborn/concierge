@@ -24,7 +24,7 @@
           <th>Scope</th>
           <td>
             <% if rule.subject_id.present? %>
-              <%= rule.subject_type %>#<%= rule.subject_id %>
+              <%= subject_label(rule) %>
             <% elsif rule.segment.present? %>
               segment <code><%= rule.segment %></code>
             <% else %>
@@ -118,7 +118,7 @@
         <td><%= rule.body %></td>
         <td>
           <% if rule.subject_id.present? %>
-            <%= rule.subject_type %>#<%= rule.subject_id %>
+            <%= subject_label(rule) %>
           <% elsif rule.segment.present? %>
             segment <%= rule.segment %>
           <% else %>

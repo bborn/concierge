@@ -44,7 +44,7 @@
       <tr>
         <td><%= link_to run.created_at.strftime("%Y-%m-%d %H:%M"), admin_run_path(run) %></td>
         <td><%= run.agent_slug %></td>
-        <td><%= run.subject_type %>#<%= run.subject_id %></td>
+        <td><%= subject_label(run) %></td>
         <td><%= run.trigger %></td>
         <td><%= run.status %><%= " (#{run.error_class})" if run.error_class %></td>
         <td><%= run.model %></td>

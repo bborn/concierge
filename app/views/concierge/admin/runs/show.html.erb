@@ -7,7 +7,7 @@
   <dd><%= @run.created_at %></dd>
 
   <dt>Agent</dt>
-  <dd><%= @run.agent_slug %> &middot; <%= @run.subject_type %>#<%= @run.subject_id %></dd>
+  <dd><%= @run.agent_slug %> &middot; <%= subject_label(@run) %></dd>
 
   <dt>Trigger</dt>
   <dd><%= @run.trigger %></dd>

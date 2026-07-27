@@ -127,6 +127,29 @@ module Concierge
       @slack
     end
 
+    # Callable(subject_ref) -> String naming this subject for a human. Display
+    # only, everywhere the engine prints a subject identity — the admin screens
+    # and the Slack cards alike:
+    #
+    #   config.subject_label = ->(subject) { Property.find_by(id: subject.id)&.business_name }
+    #
+    # The argument is a Concierge::SubjectLabel::Ref carrying +type+ (the grain:
+    # "account" / "user") and +id+ — the key pair and nothing else, because a row
+    # in the approval queue carries nothing else. The host does the lookup; only
+    # it knows how.
+    #
+    # Unset, blank, or raising all fall back to +"#{subject_type}##{subject_id}"+,
+    # which is what every surface printed before this hook existed. A caption
+    # must not be able to take the approval queue down.
+    #
+    # It is a caption and never a key: nothing in the engine looks a subject up
+    # by its label, matches on it, routes on it, or authorizes with it. There is
+    # deliberately no inverse — see Concierge::SubjectLabel.
+    #
+    # Called once per distinct subject per rendered page, not once per row, so a
+    # lookup here is fine; a hundred-row queue over five accounts asks five times.
+    attr_accessor :subject_label
+
     # --- Admin surface (Phase 9) ---
 
     # Callable(controller) -> truthy to permit admin access. Nil = deny (the admin

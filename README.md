@@ -503,6 +503,29 @@ neutralized and flagged), and **digests instead of cards for unilateral work** �
 schedule `Concierge::SlackDigestJob` and each agent reports its own autonomous
 sends in one message.
 
+### Naming an account for a human
+
+The engine keys every row by `(subject_type, subject_id)`, so left to itself the
+admin and the Slack cards call an account `account#135` — correct, and unreadable
+to the person working the queue. Tell it what to say instead:
+
+```ruby
+config.subject_label = ->(subject) { Property.find_by(id: subject.id)&.business_name }
+```
+
+The callable is handed the key pair (`subject.type`, `subject.id`) and nothing
+else; the lookup is yours, because only you know how. It applies everywhere a
+subject is named — proposals, runs, memories, routines, deliveries, rules,
+agents, the Slack screen and the Slack cards and digests.
+
+**Display only.** Nothing in Concierge looks a subject up *by* its label, matches
+on it, routes on it, or authorizes with it — `(subject_type, subject_id)` stays
+the one key, and there is deliberately no inverse. **And it cannot fail your
+admin:** unset, blank, or raising all fall back to `subject_type#subject_id`, and
+a raise is logged once rather than once per row. The label is escaped like any
+other host-supplied text. It is asked once per distinct subject per page, not
+once per row, so a lookup in it is fine.
+
 ## Security
 
 Every tool and query is scoped to the current **(agent, account)** pair — a tool

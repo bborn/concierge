@@ -5,7 +5,7 @@
     <% @routines.each do |r| %>
       <tr>
         <td><%= r.agent_slug %></td>
-        <td><%= r.subject_type %>#<%= r.subject_id %></td>
+        <td><%= subject_label(r) %></td>
         <td><%= r.schedule %></td>
         <td><%= r.instruction %></td>
         <td><%= r.author %></td>

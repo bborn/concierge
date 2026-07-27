@@ -20,7 +20,7 @@
       <dd>#<%= proposal.id %> &middot; <code><%= proposal.action_class %></code></dd>
 
       <dt>Agent</dt>
-      <dd><%= proposal.agent_slug %> &middot; <%= proposal.subject_type %>#<%= proposal.subject_id %></dd>
+      <dd><%= proposal.agent_slug %> &middot; <%= subject_label(proposal) %></dd>
 
       <dt><%= proposal.message? ? "Message" : "Arguments" %></dt>
       <dd>

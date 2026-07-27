@@ -126,6 +126,39 @@ module Concierge
       assert_nil Concierge::Slack::Digest.deliver(:csm)
     end
 
+    test "the digest names each account by the host's label when there is one" do
+      Concierge.config.subject_label = ->(subject) { Tenant.find_by(id: subject.id)&.name }
+      Concierge::Governance.new.record!(@csm, channel: "email")
+      Concierge::Governance.new.record!(Concierge::Scope.new(Concierge.config.agent(:csm), @globex),
+                                        channel: "in_app")
+
+      Concierge::Slack::Digest.deliver(:csm)
+
+      rendered = @transport.rendered("chat.postMessage")
+      assert_match "*Acme*", rendered
+      assert_match "*Globex*", rendered
+      refute_match "account ##{@acme.id}", rendered
+    end
+
+    test "the digest asks the host once per account, not once per delivery" do
+      asked = []
+      Concierge.config.subject_label = ->(subject) { asked << subject.id; "Named #{subject.id}" }
+      5.times { Concierge::Governance.new.record!(@csm, channel: "email") }
+
+      Concierge::Slack::Digest.deliver(:csm)
+
+      assert_equal [ @acme.id.to_s ], asked
+    end
+
+    test "a raising label leaves the digest on the key rather than losing the digest" do
+      Concierge.config.subject_label = ->(_subject) { raise "the host's lookup is broken" }
+      Concierge::Governance.new.record!(@csm, channel: "email")
+
+      Concierge::Slack::Digest.deliver(:csm)
+
+      assert_match "account ##{@acme.id}", @transport.rendered("chat.postMessage")
+    end
+
     private
 
     def subject_for(name)
