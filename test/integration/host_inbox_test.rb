@@ -139,21 +139,100 @@ class HostInboxTest < ActionDispatch::IntegrationTest
     assert_select ".badge", count: 0
   end
 
-  test "the one-click affirmative sends the affirmative, and only where something was asked" do
-    deliver_in_app(csm_scope(@acme), "Want me to help you publish it?")
-    deliver_in_app(billing_scope(@acme), "The card on file expires in March.")
+  # --- What buttons a message carries -----------------------------------------
+  # Declared by the host, picked by the agent, resolved by the engine — never
+  # guessed at from the words (docs/design/message-actions.md). The question-mark
+  # heuristic these replace could not tell Bill's statement of fact from a
+  # message with nothing to offer.
+
+  test "a statement that asks nothing still carries the button it needs" do
+    deliver_in_app(billing_scope(@acme), "The card on file expires in March.",
+                   actions: %i[update_payment_method])
+
+    get inbox_path
+
+    assert_select "a[href=?]", "/account#payment", text: "Update payment method"
+  end
+
+  test "each agent's message carries its own agent's offers and no others" do
+    deliver_in_app(csm_scope(@acme), "Want me to help you publish it?", actions: %i[yes_please])
+    deliver_in_app(billing_scope(@acme), "The card on file expires in March.",
+                   actions: %i[update_payment_method])
     asked, told = @acme.inbox_messages.order(:id).to_a
 
     get inbox_path
-    assert_select "form[action=?] input[value=?]",
-                  reply_inbox_message_path(asked), Inbox::AFFIRMATIVE
-    assert_select "form[action=?] input[value=?]",
-                  reply_inbox_message_path(told), Inbox::AFFIRMATIVE, count: 0
 
+    assert_select "form[action=?] input[value=?]",
+                  reply_inbox_message_path(asked), "Yes, help me with that."
+    assert_select "form[action=?] input[value=?]",
+                  reply_inbox_message_path(told), "Yes, help me with that.", count: 0
+    assert_select "a[href=?]", "/account#payment", count: 1
+  end
+
+  test "a reply-shaped offer sends the text the host declared for it" do
+    deliver_in_app(csm_scope(@acme), "Want me to help you publish it?", actions: %i[yes_please])
+    message = @acme.inbox_messages.sole
     Concierge::Test::FakeChat.script(reply: "Great — here's how.")
-    post reply_inbox_message_path(asked), params: { body: Inbox::AFFIRMATIVE }
 
-    assert_equal Inbox::AFFIRMATIVE, asked.reload.reply_body
+    post reply_inbox_message_path(message), params: { body: "Yes, help me with that." }
+
+    assert_equal "Yes, help me with that.", message.reload.reply_body
+  end
+
+  test "a message whose agent picked nothing still gets a composer" do
+    # The composer was never the thing in question: a customer can always answer
+    # in words, whatever buttons the message does or does not carry.
+    deliver_in_app(billing_scope(@acme), "Your invoice for March is attached.")
+
+    get inbox_path
+
+    assert_select "form[action=?] input[name=body]",
+                  reply_inbox_message_path(@acme.inbox_messages.sole)
+    assert_select ".msg__reply a.btn", count: 0
+  end
+
+  # The end-to-end shape of the decision: the agent names a key on the line its
+  # reply ends with, the engine resolves it against what this host declared, and
+  # the host renders its own label and its own href.
+  test "an agent's own turn decides the buttons its message carries" do
+    Concierge::Test::FakeChat.script(
+      reply: "You've got \"Scheduled exports\" sitting in drafts.\n\nActions-Offered: open_drafts"
+    )
+    scope  = csm_scope(@acme)
+    result = Concierge::Run.proactive(scope, instruction: "Nudge them about the draft.")
+
+    assert_equal :delivered, Concierge::Outreach.deliver(result, scope, channel: :in_app)
+
+    get inbox_path
+    assert_select "a[href=?]", "/changelog", text: "Open your drafts"
+    # ...and the machine-readable line is nowhere near the customer.
+    assert_select ".msg__text", text: /Actions-Offered/, count: 0
+  end
+
+  test "a key the host never declared renders no button" do
+    # The model's reach exceeding the vocabulary costs a missing button, never a
+    # fabricated one — there is no path from model output to a label or an href.
+    Concierge::Test::FakeChat.script(reply: "One thing.\n\nActions-Offered: cancel_their_account")
+    scope  = csm_scope(@acme)
+    result = Concierge::Run.proactive(scope, instruction: "Check in.")
+
+    Concierge::Outreach.deliver(result, scope, channel: :in_app)
+
+    get inbox_path
+    assert_select ".msg__reply a.btn", count: 0
+    assert_select ".msg__text", text: /One thing./
+  end
+
+  test "the buttons a message was delivered with survive a change of config" do
+    # What a message offered when it was sent is history. Re-deriving it at render
+    # time would let a config edit silently rewrite messages already delivered.
+    deliver_in_app(billing_scope(@acme), "The card on file expires in March.",
+                   actions: %i[update_payment_method])
+    Concierge.config.agent(:billing).actions.clear
+
+    get inbox_path
+
+    assert_select "a[href=?]", "/account#payment", text: "Update payment method"
   end
 
   test "the exchange is there on the next request, and the composer is not" do

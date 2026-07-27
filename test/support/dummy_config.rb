@@ -172,8 +172,11 @@ module Concierge
   # assert the in-app channel actively surfaced a message.
   class InAppInbox
     class << self
+      # Keeps the whole payload, not just the body: the buttons a message carries
+      # travel in it too (docs/design/message-actions.md), and a sink that dropped
+      # them could not tell a message that offered one from a message that did not.
       def record(subject, payload)
-        messages << { subject_id: subject.id, body: payload[:body] }
+        messages << payload.merge(subject_id: subject.id)
       end
 
       def messages

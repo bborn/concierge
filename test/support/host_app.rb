@@ -54,9 +54,18 @@ module Concierge
       # Deliver an in-app message the way the app does — through Outreach, so the
       # host's in_app_broadcaster runs and the InboxMessage is written under the
       # same token the ChannelDelivery is recorded under.
-      def deliver_in_app(scope, body, sent_at: Time.current, kind: "outreach")
+      #
+      # +actions+ names offer *keys*, the way an agent does on the line its reply
+      # ends with, and they are resolved through this agent's declared vocabulary
+      # — so a test cannot conjure a button the host never declared any more than
+      # a model can (docs/design/message-actions.md).
+      def deliver_in_app(scope, body, sent_at: Time.current, kind: "outreach", actions: [])
+        offers  = scope.agent.actions.resolve(actions).map(&:to_payload)
+        payload = { body: body, kind: kind }
+        payload[:actions] = offers if offers.any?
+
         Concierge::Outreach.dispatch(
-          scope, { body: body, kind: kind }, channel: :in_app, kind: kind,
+          scope, payload, channel: :in_app, kind: kind,
           governance: Concierge::Governance.new(now: sent_at)
         )
       end

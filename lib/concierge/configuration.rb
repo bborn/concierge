@@ -272,6 +272,22 @@ module Concierge
       @capabilities
     end
 
+    # Declare what the customer can do about a message — the host's own buttons,
+    # which the agent picks from and never invents (docs/design/message-actions.md).
+    # The single-agent form of the per-agent +c.agent(:x) { actions { ... } }+
+    # block; a pluralized host declares one vocabulary per business function.
+    #
+    #   config.actions do
+    #     offer :update_payment_method, label: "Update payment method",
+    #           use_when: "the card on file is expiring or missing",
+    #           href:     "/account#payment"
+    #   end
+    def actions(&block)
+      @actions ||= Actions.new
+      @actions.instance_eval(&block) if block
+      @actions
+    end
+
     # Where the host says how an action class it owns is performed, and what that
     # action assumed about the world (§10.6/§10.8). The engine registers its own
     # +message.*+ executor here, so a host can override it.
@@ -361,6 +377,10 @@ module Concierge
 
       def capabilities(&block)
         @config.capabilities(&block)
+      end
+
+      def actions(&block)
+        @config.actions(&block)
       end
 
       # draft_and_review was "stage the one outreach action for a human"; that is

@@ -233,6 +233,26 @@ module Dummy
           register Concierge::Tools::RoutineTool,               access: :write
         end
 
+        # What the customer can do about a message Kit sends
+        # (docs/design/message-actions.md). Kit's surface is the changelog, so
+        # these are Kit's; Bill gets its own, below.
+        #
+        # The affirmative is not special and never was. It is an offer whose
+        # payload is canned reply text instead of a link, which is why it now
+        # sits in the same list as the ones that navigate — and why the inbox no
+        # longer decides whether to show it by looking for a question mark.
+        actions do
+          offer :yes_please,
+                label:    "Yes, help me with that.",
+                use_when: "you have offered to do something and the customer need only say yes",
+                reply:    "Yes, help me with that."
+
+          offer :open_drafts,
+                label:    "Open your drafts",
+                use_when: "the useful next step is for them to get to their changelog drafts",
+                href:     "/changelog"
+        end
+
         # Autonomous within caps — the standing guidance, unchanged.
         authority { default :autonomous }
       end
@@ -252,6 +272,22 @@ module Dummy
         capabilities do
           register Concierge::Tools::RecallTool,   access: :read
           register Concierge::Tools::RememberTool, access: :write
+        end
+
+        # Bill's message about an expiring card wants a link to the payment
+        # settings, not a text box. The vocabulary is per agent for exactly this
+        # reason: an "update payment method" button on one of Kit's changelog
+        # nudges would be noise, and neither agent gets to decide what the
+        # other's product surface is.
+        #
+        # Note what is *not* here: no reply-shaped offer. Bill answers questions
+        # in the composer like anyone else, but a one-click "yes" to a statement
+        # of fact would be agreeing to nothing.
+        actions do
+          offer :update_payment_method,
+                label:    "Update payment method",
+                use_when: "the card on file is expiring, missing, or has been declined",
+                href:     "/account#payment"
         end
 
         # Money always gates to a human, and billing proposes rather than acts.

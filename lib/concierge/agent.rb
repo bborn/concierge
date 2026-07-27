@@ -72,6 +72,20 @@ module Concierge
       @capabilities
     end
 
+    # What the *customer* can do about a message this agent sends: the host's own
+    # buttons, declared here so the agent can pick from them and never invent one
+    # (docs/design/message-actions.md). Per agent, because Bill's product surface
+    # is not Kit's — an "update payment method" button on a changelog nudge is
+    # noise, and the vocabulary is where that is decided.
+    #
+    # Deliberately not one of the six slots: this is not something the agent may
+    # *do* (that is #authority), it is something the host may offer.
+    def actions(&block)
+      @actions ||= Concierge::Actions.new
+      @actions.instance_eval(&block) if block
+      @actions
+    end
+
     # Slot 4 — the authority envelope, per action class.
     def authority(&block)
       @authority ||= Authority.new

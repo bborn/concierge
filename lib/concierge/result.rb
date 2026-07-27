@@ -11,12 +11,20 @@ module Concierge
     # that claim cross-checked against what we injected.
     attr_reader :rule_ids_applied, :unknown_rule_ids
 
+    # The host-declared offers this turn asked to have shown alongside its words,
+    # already resolved against the agent's vocabulary — so these are the host's
+    # own Concierge::Actions::Offer objects, never anything the model authored
+    # (docs/design/message-actions.md). +unknown_action_keys+ is what it named
+    # that nobody declared: dropped, but visible, exactly like +unknown_rule_ids+.
+    attr_reader :actions_offered, :unknown_action_keys
+
     # The provenance row written for this run, when one was.
     attr_reader :run_record
 
     def initialize(reply_text: nil, tool_calls: [], input_tokens: nil,
                    output_tokens: nil, model: nil, error: nil, suppressed: false,
-                   rule_ids_applied: [], unknown_rule_ids: [], run_record: nil)
+                   rule_ids_applied: [], unknown_rule_ids: [], run_record: nil,
+                   actions_offered: [], unknown_action_keys: [])
       @reply_text       = reply_text
       @tool_calls       = tool_calls || []
       @input_tokens     = input_tokens
@@ -27,6 +35,8 @@ module Concierge
       @rule_ids_applied = rule_ids_applied || []
       @unknown_rule_ids = unknown_rule_ids || []
       @run_record       = run_record
+      @actions_offered  = actions_offered || []
+      @unknown_action_keys = unknown_action_keys || []
     end
 
     def self.failure(error, model: nil)

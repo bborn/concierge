@@ -24,6 +24,10 @@ Rails.application.routes.draw do
 
   get "account", to: "account#show", as: :account
 
+  # Where Bill's "Update payment method" offer points. An offer is an invitation
+  # to a host surface, so this is an ordinary host route with no engine in it.
+  patch "account/payment_method", to: "payment_methods#update", as: :payment_method
+
   # The gated path, from the customer's side: this stages an AgentProposal under
   # the :billing agent's authority envelope. Approving it in the engine admin is
   # what actually changes the plan.
