@@ -14,6 +14,61 @@ The customer success manager is agent #1, not the whole engine: declare as many
 business functions as you need and they run over the same accounts, isolated
 from each other.
 
+## What it looks like
+
+Every screenshot below is `test/dummy` — the demo host described at the bottom of
+this README — running offline with no API key. Two agents, `:csm` and `:billing`,
+over the same accounts.
+
+### The model, made concrete
+
+![Agents](docs/images/03-agents.png)
+
+Identity is **(Agent × Subject)**. Each agent declares six slots — persona/model,
+charter, tool scope, authority envelope, memory namespace, kill switch — and owns
+its own memories, conversations, routines and deliveries for the same account.
+`:csm` here is autonomous; `:billing` is not.
+
+### What the customer sees
+
+![Inbox](docs/images/01-inbox.png)
+
+Proactive outreach the agent decided to send, and replies going back to the agent
+that wrote — quoting its message, so the answer has an antecedent. Two agents
+write to the same account without sharing what they know about it.
+
+![Chat widget](docs/images/02-chat-widget.png)
+
+The reactive half. The host renders the widget; the engine owns
+`POST /concierge/accounts/:subject_id/chat`, assembles the prompt from the
+account's snapshot, its memories and the rules in force, and records what it was
+told.
+
+### The human gate
+
+![Proposals](docs/images/05-proposals.png)
+
+An action an agent may not perform itself arrives here instead of happening.
+Maker-checker (an agent can never approve), a state digest re-checked at
+execution, and a gate that decides whether approving *executes* it or merely
+records that a person will. Rules the agent claims it applied are labelled as its
+own unverified claim — see below.
+
+![Rules](docs/images/04-rules.png)
+
+Rules are versioned, human-gated instructions, separate from memory. An agent may
+propose one from a correction; only a person can put it in force, and a
+contradiction with an active rule blocks the approval.
+
+### The audit trail
+
+![Runs](docs/images/06-runs.png)
+
+Every run records what the agent was actually told: the memories injected, the
+rules injected *at the versions they were then*, the snapshot digest it reasoned
+over, and — separately, and labelled as a claim rather than evidence — which
+rules it said it applied.
+
 ## The boundaries
 
 | Boundary | What the host supplies |
