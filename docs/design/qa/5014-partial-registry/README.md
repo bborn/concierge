@@ -141,3 +141,9 @@ registry), different failure: it is a loud, accurate error whose text names the 
 (`Model.refresh!`), not a silently disabled degrade. Fixing it would mean `ChatResolver#pin_model`
 setting `assume_model_exists` from a provider it resolved itself, which contradicts the
 documented meaning of leaving `default_provider` nil — a deliberate decision, not a one-liner.
+
+**Fixed since, as task 5018 — but not where this predicted.** Task 5017 rewrote `pin_model` to
+assign the model *record* rather than a string, so `create_conversation` stopped raising on its
+own. The raise moved one step later, into the default chat factory's `to_llm`, and the decision
+this section framed never had to be taken: `default_provider` still means what
+`configuration.rb` says it means. See `docs/design/qa/5018-stale-registry-turn/README.md`.
