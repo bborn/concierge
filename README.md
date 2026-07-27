@@ -310,6 +310,49 @@ Two things stay deliberately per-*customer* rather than per-agent, because the
 customer has one inbox: outreach preferences (opt-out, quiet hours, cadence) and
 the frequency cap and per-tenant token budget that read across every agent.
 
+## What buttons a message carries
+
+A message is not always a conversation. *"Want me to help you publish that?"*
+wants a reply box; *"the card on file expires in March"* wants a link to the
+payment settings. Which buttons a message carries is decided by three parties,
+each doing only what it is authoritative about
+([the decision](docs/design/message-actions.md)):
+
+```ruby
+config.agent :billing do
+  actions do
+    offer :update_payment_method,
+          label:    "Update payment method",              # your caption
+          use_when: "the card on file is expiring",       # the one line the agent is given
+          href:     "/account#payment"                    # your surface; opaque to the engine
+  end
+end
+```
+
+The **host declares** the vocabulary — it owns its product, so it owns the key,
+the caption and the URL. The **engine advertises** it in the run's prompt, next
+to the playbook rules, and the **agent selects** by naming keys on a trailing
+line, the way it already cites rules:
+
+```
+Actions-Offered: update_payment_method
+Actions-Offered: none
+```
+
+The line is stripped before anything reaches a customer. The engine resolves
+those keys against what you declared, drops (and logs) any it was never told
+about, and carries the survivors in the outreach payload as `actions:` — so the
+model never authors a label, a URL or an action, and a bad pick costs a missing
+button rather than a fabricated one. Any key beyond `label` travels through
+untouched for your own renderer:
+
+```ruby
+c.in_app_broadcaster = lambda do |subject, payload|
+  InboxMessage.create!(tenant_id: subject.id, body: payload[:body],
+                       actions: payload[:actions] || [])
+end
+```
+
 ## Memory vs. rules
 
 Two different things used to live in `concierge_memories`, and they behave

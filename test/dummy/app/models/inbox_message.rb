@@ -37,12 +37,18 @@ class InboxMessage < ApplicationRecord
   # A payload with no token cannot be tied back to a delivery row, so it is not
   # something this inbox can show; the engine's operator-reply path is the one
   # caller that sends one, and it has its own surface.
+  #
+  # `actions` is the host's own button vocabulary, resolved by the engine from
+  # the keys the agent named (docs/design/message-actions.md) — so it is written
+  # down here with the words rather than re-derived at render time. A config edit
+  # must not retroactively change what a message delivered last month offered.
   def self.record!(subject, payload)
     token = payload[:unsubscribe_token] || payload["unsubscribe_token"]
     return nil if token.blank?
 
     create!(tenant_id: subject.id, delivery_token: token,
-            body: (payload[:body] || payload["body"]).to_s)
+            body: (payload[:body] || payload["body"]).to_s,
+            actions: payload[:actions] || payload["actions"] || [])
   end
 
   def read? = read_at.present?

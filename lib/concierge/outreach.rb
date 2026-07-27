@@ -129,8 +129,17 @@ module Concierge
       :drafted
     end
 
+    # The words, plus the host's own buttons the agent asked to have shown with
+    # them (docs/design/message-actions.md). +actions+ is present only when there
+    # are some, so a host that declared no vocabulary sees the payload it always
+    # saw — and every value in it originated in that host's config, not in the
+    # model: the agent named keys and the engine resolved them.
     def build_payload
-      { body: @result.respond_to?(:reply_text) ? @result.reply_text : @result.to_s, kind: @kind }
+      body    = @result.respond_to?(:reply_text) ? @result.reply_text : @result.to_s
+      payload = { body: body, kind: @kind }
+      offered = @result.respond_to?(:actions_offered) ? Array(@result.actions_offered) : []
+
+      offered.any? ? payload.merge(actions: offered.map(&:to_payload)) : payload
     end
   end
 end

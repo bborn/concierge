@@ -80,6 +80,43 @@
   </div>
 </div>
 
+<%# --- Where Bill's "Update payment method" offer lands ------------------- %>
+<div class="card card--flush" id="payment">
+  <div class="card__head">
+    <h2>Payment method</h2>
+    <% if current_tenant.card_expiring? %>
+      <span class="pill pill--warn">expiring</span>
+    <% end %>
+  </div>
+
+  <div class="card__row">
+    <% if current_tenant.card_on_file? %>
+      <p>
+        Card ending <strong><%= current_tenant.card_last4 %></strong>, expiring
+        <strong><%= current_tenant.card_expires_on.strftime("%B %Y") %></strong>.
+        <% unless current_tenant.card_expiring? %>
+          <span class="faint">Nothing to do.</span>
+        <% end %>
+      </p>
+    <% else %>
+      <p class="muted">No card on file.</p>
+    <% end %>
+
+    <p class="muted">
+      This is your card, so this is your change to make —
+      <%= billing_persona&.name || "Billing" %> can point you here, and that is all it does.
+    </p>
+
+    <%= form_with url: payment_method_path, method: :patch, class: "actions" do %>
+      <input type="text" name="card_last4" inputmode="numeric" maxlength="4"
+             placeholder="Last 4 digits" aria-label="Last 4 digits of the card">
+      <input type="month" name="card_expires_on" aria-label="Card expiry"
+             value="<%= current_tenant.card_expires_on&.strftime("%Y-%m") %>">
+      <button type="submit" class="btn btn--primary">Save card</button>
+    <% end %>
+  </div>
+</div>
+
 <%# --- Who is working this account --------------------------------------- %>
 <div class="card card--flush">
   <div class="card__head"><h2>Your team</h2></div>

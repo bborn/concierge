@@ -60,15 +60,30 @@
                                      placeholder: "Reply to #{item.agent_name}…",
                                      autocomplete: "off",
                                      "aria-label": "Reply to #{item.agent_name}" %>
+          <%# Send is the emphasized action only when the message has no buttons of
+              its own. Bill's card-expiry note is the case in point: the useful
+              response there is the link, and leaving Send the loudest thing on
+              the row would say the opposite. %>
           <%= form.submit(item.reply_failed? ? "Try again" : "Send",
-                          class: "btn btn--primary btn--small") %>
+                          class: "btn btn--small #{'btn--primary' if item.actions.empty?}".strip) %>
         <% end %>
 
         <div class="actions">
-          <% if item.invites_reply? && !item.reply_failed? %>
-            <%= button_to Inbox::AFFIRMATIVE, reply_inbox_message_path(item.id),
-                          params: { body: Inbox::AFFIRMATIVE },
-                          class: "btn btn--small", form_class: "inline-form" %>
+          <%# The buttons this message carries. Not inferred from its text: this
+              host declared the vocabulary per agent, the agent picked from it, and
+              the engine resolved the keys back into these host-owned labels and
+              hrefs. Nothing the model wrote reaches a link or a caption — see
+              docs/design/message-actions.md. %>
+          <% item.actions.each_with_index do |action, index| %>
+            <%# The host declared the order, so the first is what this row leads with. %>
+            <% style = "btn btn--small #{'btn--primary' if index.zero?}".strip %>
+            <% if action.link? %>
+              <%= link_to action.label, action.href, class: style %>
+            <% elsif action.reply? %>
+              <%= button_to action.label, reply_inbox_message_path(item.id),
+                            params: { body: action.reply },
+                            class: style, form_class: "inline-form" %>
+            <% end %>
           <% end %>
           <% unless item.read? %>
             <%= button_to "Mark read", read_inbox_message_path(item.id),

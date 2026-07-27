@@ -274,6 +274,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_27_120000) do
   end
 
   create_table "inbox_messages", force: :cascade do |t|
+    t.json "actions"
     t.text "agent_reply"
     t.text "body"
     t.datetime "created_at", null: false
@@ -332,6 +333,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_27_120000) do
   end
 
   create_table "tenants", force: :cascade do |t|
+    t.date "card_expires_on"
+    t.string "card_last4"
     t.datetime "created_at", null: false
     t.datetime "last_active_at"
     t.string "name"

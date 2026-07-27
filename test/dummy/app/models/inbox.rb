@@ -41,11 +41,30 @@
 # everything said either way. For a demo host whose point is that the *host*
 # owns customer-facing words (see InboxMessage), that is the right trade — but
 # it is a trade, not a free win.
+#
+# ## What buttons a message carries
+#
+# It used to be a question mark in the body: end in one and the message got a
+# canned "Yes, help me with that."; otherwise it got a text box and nothing else.
+# That was the host pattern-matching prose it did not write, and Bill's
+# card-expiry note — which asks nothing and wants a link to the payment settings
+# — is exactly where it fell over.
+#
+# It is now declared, not inferred (docs/design/message-actions.md). This host
+# declares a per-agent vocabulary in Dummy::ConciergeSetup, the engine puts that
+# vocabulary in the agent's prompt and carries back the keys it picked, and the
+# words below render what came back. The affirmative is not special: it is one
+# offer among them, whose payload happens to be canned reply text rather than an
+# href. The composer stays on every unanswered message either way — a customer
+# can always answer in words.
 class Inbox
-  # The one-click answer to an agent that offered a hand. Not a framework for
-  # per-message actions — Bill's card-expiry note wants an "update payment
-  # method" button and that is host product surface, not this.
-  AFFIRMATIVE = "Yes, help me with that.".freeze
+  # One button on one message, as the host declared it and the engine handed it
+  # back. `href` and `reply` are this host's own rendering attributes: the engine
+  # carried them through untouched and has no opinion about either.
+  Action = Struct.new(:key, :label, :href, :reply) do
+    def link?  = href.present?
+    def reply? = reply.present?
+  end
 
   Item = Struct.new(:delivery, :message, keyword_init: true) do
     def id          = message.id
@@ -71,12 +90,20 @@ class Inbox
       Concierge.config.agent(agent_slug)&.playbook&.persona&.name || agent_slug.to_s.titleize
     end
 
-    # Whether to offer the one-click affirmative. A question mark is a crude test
-    # and deliberately so: the alternative is a per-message action vocabulary the
-    # agent would have to emit and the host would have to render, which is a
-    # different piece of work. Bill's "the card on file expires in March" asks
-    # nothing, so it gets a composer and no button.
-    def invites_reply? = body.to_s.include?("?")
+    # The buttons this message carries, in the order the host declared them.
+    # Read off the row rather than out of config: what a message offered when it
+    # was delivered is history, and a later config edit must not rewrite it.
+    #
+    # An offer this host no longer understands renders as nothing — the same
+    # posture the engine takes toward a key it was never told about.
+    def actions
+      Array(message.actions).filter_map do |action|
+        attrs = action.respond_to?(:with_indifferent_access) ? action.with_indifferent_access : {}
+        next if attrs[:label].blank?
+
+        Action.new(attrs[:key], attrs[:label], attrs[:href], attrs[:reply])
+      end
+    end
 
     # The customer's words, with the message they answer carried as quoted
     # context — design decision (a), see the class comment.

@@ -32,10 +32,20 @@ Message.update_all(tool_call_id: nil)
   Concierge::AgentRule, Concierge::AgentRun,
   ToolCall, Message, Chat, Model, InboxMessage, ChangelogEntry, User, Tenant ].each(&:delete_all)
 
-acme = Tenant.create!(name: "Acme Corp", plan: "pro", last_active_at: 2.days.ago)
+# Acme's card is the one Bill writes about: real, on file, and expiring soon
+# enough that saying so is worth a message. Every seeded sentence about it reads
+# the month off this date rather than naming one, so the inbox, Bill's memory and
+# the page the "Update payment method" button lands on cannot disagree — whatever
+# day you happen to run `db:seed`.
+acme_card_expires_on = 6.weeks.from_now.end_of_month
+acme_card_expiry     = acme_card_expires_on.strftime("%B")
+
+acme = Tenant.create!(name: "Acme Corp", plan: "pro", last_active_at: 2.days.ago,
+                      card_last4: "4242", card_expires_on: acme_card_expires_on)
 dana = acme.users.create!(email: "dana@acme.test")
 
-globex = Tenant.create!(name: "Globex", plan: "enterprise", last_active_at: 6.hours.ago)
+globex = Tenant.create!(name: "Globex", plan: "enterprise", last_active_at: 6.hours.ago,
+                        card_last4: "1881", card_expires_on: 3.years.from_now.end_of_month)
 hank = globex.users.create!(email: "hank@globex.test")
 globex.users.create!(email: "lena@globex.test")
 
@@ -85,7 +95,7 @@ end
   [ :csm,     acme,    "agent", "goal",       "Wants to publish a changelog before their Q3 launch.", false ],
   [ :csm,     acme,    "agent", "preference", "Prefers short emails; asked for no more than one a week.", false ],
   [ :csm,     acme,    "human", "account",    "Dana is the champion here. CEO is skeptical of AI tooling — keep it low-key.", true ],
-  [ :billing, acme,    "agent", "billing",    "Card on file expires in March; no backup payment method.", false ],
+  [ :billing, acme,    "agent", "billing",    "Card on file expires in #{acme_card_expiry}; no backup payment method.", false ],
   [ :billing, acme,    "human", "billing",    "Invoice #4471 was disputed in May and resolved in their favour.", true ],
   [ :csm,     globex,  "agent", "goal",       "Rolling out to 4 more teams next quarter.", false ],
   [ :csm,     globex,  "human", "account",    "Renewal is in November. Procurement wants SOC 2 docs.", true ],
@@ -159,9 +169,20 @@ end
 # created under the same unsubscribe token the ChannelDelivery is recorded under.
 # Backdated through Governance so the seeded history is history.
 
-def deliver_in_app(scope, body, sent_at:, kind: "outreach")
+#
+# `actions` names *keys*, exactly as the agent would on the machine-readable line
+# a live turn ends with, and they are resolved here through the same declared
+# vocabulary the engine resolves them through — so a seeded message and a
+# generated one carry buttons from one source of truth (see
+# docs/design/message-actions.md). A key nobody declared seeds nothing, which is
+# the behaviour a made-up key gets from the model too.
+def deliver_in_app(scope, body, sent_at:, kind: "outreach", actions: [])
+  offers  = scope.agent.actions.resolve(actions).map(&:to_payload)
+  payload = { body: body, kind: kind }
+  payload[:actions] = offers if offers.any?
+
   Concierge::Outreach.dispatch(
-    scope, { body: body, kind: kind }, channel: :in_app, kind: kind,
+    scope, payload, channel: :in_app, kind: kind,
     governance: Concierge::Governance.new(now: sent_at)
   )
 end
@@ -202,21 +223,27 @@ deliver_in_app(
   "You've been on Pro for a few weeks and haven't published a changelog entry yet — " \
   "and you've got one sitting in drafts. Want me to help you get \"Scheduled exports\" " \
   "out the door before your Q3 launch?",
-  sent_at: 9.days.ago
+  sent_at: 9.days.ago,
+  actions: %i[yes_please open_drafts]
 )
 
+# The message this whole seam exists for. It asks nothing, so a text box is the
+# wrong affordance and a canned "yes" would be agreeing to nothing; what it wants
+# is a link to the card. Bill declared that link, Bill picked it here.
 deliver_in_app(
   scope_for(:billing, acme),
-  "Heads up from billing: the card on file expires in March and there's no backup " \
-  "payment method on the account.",
-  sent_at: 12.days.ago
+  "Heads up from billing: the card on file expires in #{acme_card_expiry} and there's " \
+  "no backup payment method on the account.",
+  sent_at: 12.days.ago,
+  actions: %i[update_payment_method]
 )
 
 deliver_in_app(
   scope_for(:csm, globex),
   "Three entries published this quarter — \"Faster search\" is your best-read one yet. " \
   "Want the Friday summary to include per-team view counts?",
-  sent_at: 2.days.ago
+  sent_at: 2.days.ago,
+  actions: %i[yes_please]
 )
 
 # One already read, so the inbox is not uniformly bold.

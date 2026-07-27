@@ -102,7 +102,8 @@ module Concierge
     # top-of-mind memory + the Playbook rules in force. Assembled fresh every run
     # so the agent always reasons over current state and current policy.
     def system_prompt
-      [ role_line, product_brief, snapshot_block, memory_block, rules_block, trigger_note ]
+      [ role_line, product_brief, snapshot_block, memory_block, rules_block,
+        actions_block, trigger_note ]
         .compact
         .join("\n\n")
     end
@@ -156,6 +157,17 @@ module Concierge
       @rules ||= Rules.active_for(@scope).to_a
     end
 
+    # What the host's product can do about whatever this turn writes
+    # (docs/design/message-actions.md). The agent is told the vocabulary rather
+    # than left to know it, which is the whole point: it picks, it never invents.
+    def actions_block
+      actions.to_prompt
+    end
+
+    def actions
+      @actions ||= agent.actions || Actions.new
+    end
+
     def trigger_note
       return unless @trigger[:type] == :proactive && @trigger[:instruction]
 
@@ -168,6 +180,14 @@ module Concierge
       cited   = Rules::Citation.extract(reply.content)
       unknown = Rules::Citation.unknown(cited.rule_ids, rules.map(&:id))
 
+      # ...and the same for the actions line. Stripped whether or not this agent
+      # declared a vocabulary, so a model that emits one unprompted cannot leak
+      # a machine-readable trailer into a customer's inbox.
+      selected      = Actions.extract(cited.text)
+      offered       = actions.resolve(selected.keys)
+      unknown_keys  = actions.unknown(selected.keys)
+      log_unknown_actions(unknown_keys)
+
       record = record_provenance(
         status:           "ok",
         input_tokens:     token(reply, :input_tokens),
@@ -179,14 +199,28 @@ module Concierge
       )
 
       Result.new(
-        reply_text:       cited.text,
+        reply_text:       selected.text,
         tool_calls:       reply.respond_to?(:tool_calls) ? reply.tool_calls : [],
         input_tokens:     token(reply, :input_tokens),
         output_tokens:    token(reply, :output_tokens),
         model:            model,
         rule_ids_applied: cited.rule_ids,
         unknown_rule_ids: unknown,
-        run_record:       record
+        run_record:       record,
+        actions_offered:  offered,
+        unknown_action_keys: unknown_keys
+      )
+    end
+
+    # An offer key nobody declared shows nothing, but an operator should be able
+    # to find out that the agent asked for it — a vocabulary the model keeps
+    # reaching past is a vocabulary that is missing something.
+    def log_unknown_actions(keys)
+      return if keys.empty?
+
+      Concierge.logger&.info(
+        "[concierge] #{@scope.agent_slug} offered undeclared action(s) " \
+        "#{keys.join(', ')} for #{subject.grain}##{subject.id}"
       )
     end
 
