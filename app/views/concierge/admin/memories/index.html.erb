@@ -7,7 +7,7 @@
     <% @memories.each do |m| %>
       <tr>
         <td><%= m.agent_slug %></td>
-        <td><%= m.subject_type %>#<%= m.subject_id %></td>
+        <td><%= subject_label(m) %></td>
         <td><%= m.source %></td>
         <td><%= m.category %></td>
         <td><%= m.body %></td>

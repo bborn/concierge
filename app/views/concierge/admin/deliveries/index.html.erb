@@ -5,7 +5,7 @@
     <% @deliveries.each do |d| %>
       <tr>
         <td><%= d.agent_slug %></td>
-        <td><%= d.subject_type %>#<%= d.subject_id %></td>
+        <td><%= subject_label(d) %></td>
         <td><%= d.channel %></td>
         <td><%= d.kind %></td>
         <td><%= d.sent_at %></td>

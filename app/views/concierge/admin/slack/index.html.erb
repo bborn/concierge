@@ -98,7 +98,7 @@
         <tr>
           <td>#<%= card.id %></td>
           <td><%= card.agent_slug %></td>
-          <td><%= card.subject_type %>#<%= card.subject_id %></td>
+          <td><%= subject_label(card) %></td>
           <td>
             <%= link_to "##{card.agent_proposal_id}", admin_proposals_path %>
           </td>

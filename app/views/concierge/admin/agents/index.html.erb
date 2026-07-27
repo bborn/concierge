@@ -89,7 +89,7 @@
             no thread is held by a human
           <% end %>
           <% if (handback = @last_handbacks[agent.memory_namespace]) %>
-            <br>last handback: <code><%= handback.subject_type %> <%= handback.subject_id %></code>
+            <br>last handback: <code><%= subject_label(handback, fallback: "#{handback.subject_type} #{handback.subject_id}") %></code>
             was taken over by
             <strong><%= handback.operator %></strong> and handed back by
             <strong><%= handback.released_by || "somebody the engine did not record" %></strong>

@@ -51,6 +51,14 @@ Concierge.configure do |config|
   # ...and say who is driving it, so approving a rule records a real approver.
   # Without this, the rule gate refuses rather than inventing one.
   # config.admin_actor = ->(controller) { controller.current_user.email }
+  #
+  # ...and what to call an account on screen. Without this the admin and the
+  # Slack cards name every subject by its key ("account#135"), which is correct
+  # and unreadable to whoever is working the queue. Display only: the engine
+  # still keys everything by (subject_type, subject_id), and nothing ever looks a
+  # subject up by its label. A blank answer, or one that raises, falls back to
+  # the key — a caption must not be able to take your approval queue down.
+  # config.subject_label = ->(subject) { Account.find_by(id: subject.id)&.name }
 
   # 7b. Guard the per-account endpoints — REQUIRED to use them at all. They take
   # the account out of the URL, so the engine has to ask you whether this

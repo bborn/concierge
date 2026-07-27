@@ -75,6 +75,13 @@ module Dummy
       # rather than inventing an approver (design §10.2).
       c.admin_actor = ->(_controller) { "operator@acme.test" }
 
+      # What to call an account on screen. Without this every surface reads
+      # `account#1`, which is correct and unreadable — the operator working the
+      # queue knows "Acme", not the primary key. Display only: the engine still
+      # finds, scopes and audits every row by (subject_type, subject_id), and
+      # nothing looks a subject up by this string.
+      c.subject_label = ->(subject) { Tenant.find_by(id: subject.id)&.name }
+
       # ...and who may drive an account's agent over the engine's own endpoints.
       # The chat endpoint takes the account out of the URL, so without this a
       # signed-in customer could hand-craft a POST naming another tenant's

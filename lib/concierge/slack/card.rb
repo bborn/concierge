@@ -169,7 +169,7 @@ module Concierge
       end
 
       def summary_section
-        lines = [ "*#{proposal.agent_slug}* on *#{proposal.subject_type} ##{proposal.subject_id}*" ]
+        lines = [ "*#{proposal.agent_slug}* on *#{Text.safe(subject_name, limit: 150)}*" ]
         if proposal.message?
           lines << ">#{Text.safe(proposal.body).gsub("\n", "\n>")}"
           lines << "_via #{proposal.channel || 'whichever channel can reach them'}_"
@@ -179,6 +179,14 @@ module Concierge
         lines << ":loudspeaker: _this draft tried to notify a whole channel; the ping was removed_" if shouted?
 
         mrkdwn(lines.join("\n"))
+      end
+
+      # What to call this account on the card — the host's config.subject_label
+      # if it set one, else the key this line has always carried. Display only,
+      # and through Text.safe like every other string we did not write: a host's
+      # business name is no more trusted with `<!channel>` than a model's draft.
+      def subject_name
+        SubjectLabel.for(proposal, fallback: "#{proposal.subject_type} ##{proposal.subject_id}")
       end
 
       def shouted?

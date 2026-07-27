@@ -50,12 +50,18 @@ module Concierge
       def summary_lines
         lines = []
 
+        # One resolver for the whole digest, so a host's config.subject_label is
+        # asked once per account named here rather than once per delivery row.
+        labels = SubjectLabel::Resolver.new
+
         deliveries.group_by(&:subject_id).each do |subject_id, rows|
           # By channel, not by kind: "3× email" is what an operator can act on, and
           # nearly every row's kind is "outreach" anyway.
           channels = rows.group_by(&:channel).transform_values(&:size)
                          .map { |channel, count| count > 1 ? "#{count}× #{channel}" : channel }
-          lines << "• *#{rows.first.subject_type} ##{subject_id}* — #{channels.join(', ')}"
+          subject_type = rows.first.subject_type
+          name = labels.label(subject_type, subject_id, fallback: "#{subject_type} ##{subject_id}")
+          lines << "• *#{Text.safe(name, limit: 150)}* — #{channels.join(', ')}"
         end
 
         lines << "• #{pluralize(runs, 'run')} with no message sent" if runs.positive? && deliveries.empty?

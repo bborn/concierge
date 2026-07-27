@@ -907,6 +907,46 @@ module Concierge
       refute Concierge::OutreachPreference.column_names.include?("agent_slug")
     end
 
+    test "a subject's display label is a caption, and never moves a row between cells" do
+      # config.subject_label names an account for the human reading the queue. It
+      # is display only — so point Acme's label straight at Globex's own key, the
+      # most confusable string there is, and nothing may shift: every cell still
+      # sees itself and nothing else.
+      Concierge.config.subject_label = lambda do |ref|
+        ref.id == @acme.id.to_s ? "account##{@globex.id}" : "account##{@acme.id}"
+      end
+
+      @grid.each do |(agent_slug, account), scope|
+        assert_equal [ "private note for #{agent_slug}/#{account}" ],
+                     @store.recall(scope).map(&:body)
+      end
+      # Acme is *captioned* with Globex's key and vice versa, and the rows above
+      # still did not budge.
+      assert_equal "account##{@globex.id}", Concierge::SubjectLabel.for_key("account", @acme.id)
+      assert_equal "account##{@acme.id}",   Concierge::SubjectLabel.for_key("account", @globex.id)
+    end
+
+    test "a label is not a key: no engine surface resolves a subject by one" do
+      # If a caption could name a subject, host display text would become a
+      # forgeable identifier and §10.12's boundary would have a second door.
+      Concierge.config.subject_label = ->(_ref) { "Acme" }
+
+      # The adapter — the one place a subject is looked up from a request — knows
+      # only ids. A label is not one, whoever wrote it.
+      assert_raises(ActiveRecord::RecordNotFound) { Concierge.config.account.find_subject("Acme") }
+
+      # And the label module offers no inverse to reach for instead.
+      refute Concierge::SubjectLabel.respond_to?(:find_by_label)
+      refute Concierge::SubjectLabel.respond_to?(:subject_for)
+
+      # Nor does a label reach any of the per-pair stores.
+      labelled = Concierge::Scope.new(agent(:csm), @acme)
+      assert_equal({ agent_slug: "csm", subject_type: "account", subject_id: @acme.id.to_s },
+                   labelled.key)
+      assert_empty Concierge::Memory.where(subject_id: "Acme")
+      assert_empty Concierge::AgentRule.where(subject_id: "Acme")
+    end
+
     private
 
     def activate(scope, body)

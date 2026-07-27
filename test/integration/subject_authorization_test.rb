@@ -119,6 +119,22 @@ class SubjectAuthorizationTest < ActionDispatch::IntegrationTest
     assert Concierge::OutreachPreference.for(subject).opted_out
   end
 
+  test "a subject's display label is not a way to reach it through the endpoint" do
+    # config.subject_label is a caption for the admin and the Slack cards, never
+    # an identifier. Even with the host answering yes to everything, the URL
+    # still takes an id: a label that resolved here would be host display text
+    # promoted to a key, and forgeable by whoever can type it.
+    Concierge::Test.authorize_all_subjects!
+    Concierge.config.subject_label = ->(_ref) { "Crossroads Commons" }
+    Concierge::Test::FakeChat.script(reply: "should never be reached")
+
+    post "/concierge/accounts/Crossroads%20Commons/chat", params: { message: "hi" }
+
+    assert_response :forbidden
+    assert_empty Concierge::Test::FakeChat.current.prompts
+    assert_equal 0, Concierge::Conversation.count
+  end
+
   test "the admin keeps its own hook rather than answering to this one" do
     # Two different questions: authenticate_admin is "are you staff", and
     # authorize_subject is "is this account yours". Neither may stand in for the
