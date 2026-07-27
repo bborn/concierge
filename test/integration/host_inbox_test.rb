@@ -5,6 +5,8 @@ require "test_helper"
 # ChannelDelivery rows, one `for_scope` query per (agent, this account).
 class HostInboxTest < ActionDispatch::IntegrationTest
   include Concierge::Test::HostApp
+  include ActiveJob::TestHelper
+  include Concierge::Test::BrokenQueue
 
   setup { sign_in_as @dana }
 
@@ -85,7 +87,7 @@ class HostInboxTest < ActionDispatch::IntegrationTest
     message = @acme.inbox_messages.sole
     Concierge::Test::FakeChat.script(reply: "Let's do it — open Changelog and hit Publish.")
 
-    post reply_inbox_message_path(message), params: { body: "Yes please." }
+    reply_to(message, "Yes please.")
 
     assert_redirected_to inbox_path
     # The antecedent: without it a bare "Yes please." reaches a model that has
@@ -105,7 +107,7 @@ class HostInboxTest < ActionDispatch::IntegrationTest
     message = @acme.inbox_messages.sole
     Concierge::Test::FakeChat.script(reply: "I've made a note of it.")
 
-    post reply_inbox_message_path(message), params: { body: "Can I update it here?" }
+    reply_to(message, "Can I update it here?")
 
     assert_equal 1, Concierge::AgentRun.for_scope(billing_scope(@acme)).count
     assert_equal 0, Concierge::AgentRun.for_scope(csm_scope(@acme)).count,
@@ -116,12 +118,13 @@ class HostInboxTest < ActionDispatch::IntegrationTest
 
   test "the request cannot re-route a reply to a different agent" do
     # The agent comes off the ChannelDelivery row this message was delivered
-    # under, not off the request — so naming one is not a way across.
+    # under, not off the request — so naming one is not a way across. The job
+    # re-resolves it the same way, from the row rather than from its arguments.
     deliver_in_app(billing_scope(@acme), "The card on file expires in March.")
     message = @acme.inbox_messages.sole
     Concierge::Test::FakeChat.script(reply: "I've made a note of it.")
 
-    post reply_inbox_message_path(message), params: { body: "Sure.", agent: "csm" }
+    reply_to(message, "Sure.", params: { agent: "csm" })
 
     assert_equal 1, Concierge::AgentRun.for_scope(billing_scope(@acme)).count
     assert_equal 0, Concierge::AgentRun.for_scope(csm_scope(@acme)).count
@@ -132,7 +135,7 @@ class HostInboxTest < ActionDispatch::IntegrationTest
     message = @acme.inbox_messages.sole
     Concierge::Test::FakeChat.script(reply: "Happy to.")
 
-    post reply_inbox_message_path(message), params: { body: "Yes." }
+    reply_to(message, "Yes.")
 
     assert message.reload.read?, "an answered question was still flagged unread"
     follow_redirect!
@@ -151,7 +154,7 @@ class HostInboxTest < ActionDispatch::IntegrationTest
                   reply_inbox_message_path(told), Inbox::AFFIRMATIVE, count: 0
 
     Concierge::Test::FakeChat.script(reply: "Great — here's how.")
-    post reply_inbox_message_path(asked), params: { body: Inbox::AFFIRMATIVE }
+    reply_to(asked, Inbox::AFFIRMATIVE)
 
     assert_equal Inbox::AFFIRMATIVE, asked.reload.reply_body
   end
@@ -161,8 +164,8 @@ class HostInboxTest < ActionDispatch::IntegrationTest
     message = @acme.inbox_messages.sole
     Concierge::Test::FakeChat.script(reply: "Open Changelog and hit Publish.")
 
-    post reply_inbox_message_path(message), params: { body: "Yes please." }
-    follow_redirect!
+    reply_to(message, "Yes please.")
+    get inbox_path
 
     assert_select ".bubble--user", text: "Yes please."
     assert_select ".bubble--agent", text: "Open Changelog and hit Publish."
@@ -174,28 +177,11 @@ class HostInboxTest < ActionDispatch::IntegrationTest
     message = @acme.inbox_messages.sole
     Concierge::Test::FakeChat.script(reply: "Sure.")
 
-    post reply_inbox_message_path(message), params: { body: "Yes." }
+    reply_to(message, "Yes.")
 
     run = Concierge::AgentRun.for_scope(csm_scope(@acme)).sole
     assert_equal run.id, message.reload.reply_run_id
     assert_equal "reactive", run.trigger
-  end
-
-  test "a turn that fails leaves the message unanswered and says so" do
-    # The alternative is telling a customer their question landed when the model
-    # never answered it, and clearing the flag that would have reminded them.
-    deliver_in_app(csm_scope(@acme), "Want a hand with the draft?")
-    message = @acme.inbox_messages.sole
-    Concierge::Test::FakeChat.raise_with(RubyLLM::Error.new(nil, "overloaded"))
-
-    post reply_inbox_message_path(message), params: { body: "Yes please." }
-
-    assert_redirected_to inbox_path
-    assert_not message.reload.replied?
-    assert_not message.read?
-    assert_nil message.reply_body
-    follow_redirect!
-    assert_select ".flash", text: /wasn't sent/
   end
 
   test "an empty reply is not a turn" do
@@ -203,11 +189,14 @@ class HostInboxTest < ActionDispatch::IntegrationTest
     message = @acme.inbox_messages.sole
     Concierge::Test::FakeChat.script(reply: "should never be reached")
 
-    post reply_inbox_message_path(message), params: { body: "   " }
+    assert_no_enqueued_jobs only: InboxReplyJob do
+      post reply_inbox_message_path(message), params: { body: "   " }
+    end
 
     assert_empty Concierge::Test::FakeChat.current.prompts
     assert_equal 0, Concierge::AgentRun.for_scope(csm_scope(@acme)).count
     assert_not message.reload.replied?
+    assert_nil message.reply_body
   end
 
   test "another account's message cannot be answered" do
@@ -215,13 +204,110 @@ class HostInboxTest < ActionDispatch::IntegrationTest
     theirs = @globex.inbox_messages.sole
     Concierge::Test::FakeChat.script(reply: "should never be reached")
 
-    post reply_inbox_message_path(theirs), params: { body: "Answering on your behalf." }
+    assert_no_enqueued_jobs only: InboxReplyJob do
+      post reply_inbox_message_path(theirs), params: { body: "Answering on your behalf." }
+    end
 
     assert_response :not_found
     assert_not theirs.reload.replied?
     assert_empty Concierge::Test::FakeChat.current.prompts
     assert_equal 0, Concierge::AgentRun.for_scope(csm_scope(@globex)).count
     assert_equal 0, Concierge::AgentRun.for_scope(csm_scope(@acme)).count
+  end
+
+  # --- The turn is not the request --------------------------------------------
+  # Offline, `Dummy::ScriptedChat` answers in microseconds and none of this shows.
+  # Against a real provider the old path was a customer watching a form post spin
+  # for the length of a model turn.
+
+  test "the reply comes back before the turn does, with their words already on the card" do
+    deliver_in_app(csm_scope(@acme), "Want a hand with the draft?")
+    message = @acme.inbox_messages.sole
+    Concierge::Test::FakeChat.script(reply: "should not have run yet")
+
+    assert_enqueued_jobs 1, only: InboxReplyJob do
+      post reply_inbox_message_path(message), params: { body: "Yes please." }
+    end
+
+    assert_redirected_to inbox_path
+    assert_empty Concierge::Test::FakeChat.current.prompts,
+                 "the turn ran inside the request the customer was waiting on"
+
+    # Pending is a persisted state, not a spinner the browser drew — so it is
+    # still here on a reload, in another tab, and on the phone in their pocket.
+    assert message.reload.awaiting_reply?
+    get inbox_path
+    assert_select ".bubble--user", text: "Yes please."
+    assert_select ".bubble--thinking", text: /Kit is replying/
+    assert_select "form[action=?] input[name=body]", reply_inbox_message_path(message), count: 0
+  end
+
+  test "a message already being answered is not answered twice" do
+    deliver_in_app(csm_scope(@acme), "Want a hand with the draft?")
+    message = @acme.inbox_messages.sole
+    Concierge::Test::FakeChat.script(reply: "Open Changelog and hit Publish.")
+
+    reply_to(message, "Yes please.")
+
+    # The composer is gone from the card, so this is a hand-crafted POST — and it
+    # must not overwrite an exchange that already happened.
+    post reply_inbox_message_path(message), params: { body: "Actually, no." }
+
+    assert_equal "Yes please.", message.reload.reply_body
+    assert_equal "Open Changelog and hit Publish.", message.agent_reply
+    follow_redirect!
+    assert_select ".flash", text: /already answered/
+  end
+
+  test "a turn that fails leaves the message unanswered, unread, and says so on the card" do
+    # The alternative is telling a customer their question landed when the model
+    # never answered it, and clearing the flag that would have reminded them.
+    # A flash cannot carry this any more: the request that started the turn was
+    # answered long before it failed, so the card has to say it instead.
+    deliver_in_app(csm_scope(@acme), "Want a hand with the draft?")
+    message = @acme.inbox_messages.sole
+    Concierge::Test::FakeChat.raise_with(RubyLLM::Error.new(nil, "overloaded"))
+
+    reply_to(message, "Yes please.")
+
+    assert_not message.reload.replied?
+    assert_not message.read?, "a question nobody answered stopped asking for attention"
+    assert message.reply_failed?
+
+    get inbox_path
+    assert_select ".bubble--error", text: /wasn't sent/
+    assert_select ".badge", text: "1"
+    # Their words are kept, so trying again is a click and not re-typing.
+    assert_select "form[action=?] input[value=?]",
+                  reply_inbox_message_path(message), "Yes please."
+  end
+
+  test "a failed reply can be sent again" do
+    deliver_in_app(csm_scope(@acme), "Want a hand with the draft?")
+    message = @acme.inbox_messages.sole
+    Concierge::Test::FakeChat.raise_with(RubyLLM::Error.new(nil, "overloaded"))
+    reply_to(message, "Yes please.")
+
+    Concierge::Test::FakeChat.script(reply: "Of course — here's how.")
+    reply_to(message, "Yes please.")
+
+    assert message.reload.replied?
+    assert_not message.reply_failed?
+    assert_equal "Of course — here's how.", message.agent_reply
+  end
+
+  test "a queue that will not take the work says so rather than leaving a card spinning" do
+    deliver_in_app(csm_scope(@acme), "Want a hand with the draft?")
+    message = @acme.inbox_messages.sole
+
+    with_broken_queue(InboxReplyJob) do
+      post reply_inbox_message_path(message), params: { body: "Yes please." }
+    end
+
+    assert_not message.reload.awaiting_reply?, "a card was left waiting on a job that does not exist"
+    assert message.reply_failed?
+    follow_redirect!
+    assert_select ".flash", text: /wasn't sent/
   end
 
   test "an email delivery is audited but is not an in-app message" do

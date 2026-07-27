@@ -36,10 +36,14 @@ verify" at the bottom.
   reply's tool calls land on the messages *before* the final one. The endpoint is
   tested against rows written by hand; it has never been driven by a live
   tool-using turn.
-- **Turbo/ActionCable surfacing.** `Concierge::Channel::InApp` broadcasts through
-  `config.in_app_broadcaster`; this host persists the message rather than pushing
-  it to an open page, so the unread badge appears on the next request rather
-  than live.
+- ~~**Turbo/ActionCable surfacing.** `Concierge::Channel::InApp` broadcasts
+  through `config.in_app_broadcaster`; this host persists the message rather than
+  pushing it to an open page, so the unread badge appears on the next request
+  rather than live.~~
+  **Closed by task 5020** — the host's broadcaster now pushes a Turbo Stream, so
+  a message that arrives while a page is open prepends itself and raises the
+  badge live, and a reply runs in a job whose answer streams into the card. See
+  `docs/design/qa/5020-inbox-live/`.
 
 ## Known gap, filed separately — since closed
 

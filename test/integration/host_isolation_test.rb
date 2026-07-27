@@ -100,7 +100,7 @@ class HostIsolationTest < ActionDispatch::IntegrationTest
     Concierge::ContextStore.new.remember(csm_scope(@acme), body: "Acme wants a Q3 launch.")
     Concierge::Test::FakeChat.script(reply: "Noted.")
 
-    post "/inbox/#{@acme.inbox_messages.sole.id}/reply", params: { body: "Can I update it here?" }
+    reply_to(@acme.inbox_messages.sole, "Can I update it here?")
 
     # Right agent, right account: billing's own charter, and neither the CSM's
     # memory nor another account's anywhere in the prompt.

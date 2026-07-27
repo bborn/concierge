@@ -42,7 +42,11 @@ module Concierge
     # Callable(subject) -> email address, so the gem stays schema-agnostic.
     attr_accessor :email_address_for
 
-    # Callable(subject, payload) that surfaces an in-app message (Turbo broadcast).
+    # Callable(subject, payload) that ACTIVELY surfaces an in-app message — opens
+    # a panel, raises a badge, pushes a Turbo Stream. Persisting a row the
+    # customer will find on their next visit is half of it; see Channel::InApp
+    # for why the engine ships no default and why the channel refuses to report a
+    # delivery without this hook.
     attr_accessor :in_app_broadcaster
 
     # Host used to build absolute unsubscribe URLs in emails.

@@ -59,6 +59,12 @@ class Inbox
     def kind        = delivery.kind
     def sent_at     = delivery.sent_at
 
+    # Where the reply has got to. The turn runs in a job, so "sent" and
+    # "answered" are two states with a model call between them, and a third for
+    # the turn that never happened — see InboxMessage.
+    def awaiting_reply? = message.awaiting_reply?
+    def reply_failed?   = message.reply_failed?
+
     # The name the customer knows this agent by, falling back to the slug for an
     # agent the host has since removed from its config.
     def agent_name

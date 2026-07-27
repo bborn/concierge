@@ -1,0 +1,81 @@
+<%# One message card, rendered from two places: the inbox page, and a Turbo
+    Stream broadcast when the row changes under an open page (InboxBroadcast).
+    Sharing it is the point — a card that only the request path knows how to draw
+    is a card that drifts the moment it is pushed.
+
+    So: nothing here may call a controller helper. Everything comes off the Item,
+    which is the engine's delivery row joined to the host's message under a
+    per-(agent, this account) narrowing — the same narrowing whether this is a
+    page load or a push. %>
+<div class="card__row msg <%= "msg--unread" unless item.read? %>"
+     id="<%= dom_id(item.message) %>">
+  <span class="avatar <%= "avatar--billing" if item.agent_slug == "billing" %>">
+    <%= item.agent_name.first %>
+  </span>
+  <div class="msg__body">
+    <div class="msg__head">
+      <span class="msg__who"><%= item.agent_name %></span>
+      <span class="faint"><%= item.sent_at.strftime("%-d %b, %H:%M") %></span>
+      <span class="pill"><%= item.kind %></span>
+      <% unless item.read? %><span class="pill pill--accent">new</span><% end %>
+    </div>
+    <div class="msg__text"><%= item.body %></div>
+
+    <% if item.replied? %>
+      <%# The loop closed. Both halves live on the host's own row: the words
+          are customer-facing text under the host's retention policy, and
+          the engine keeps the provenance for the turn that produced them. %>
+      <div class="msg__thread">
+        <p class="bubble bubble--user"><%= item.reply_body %></p>
+        <p class="bubble bubble--agent"><%= item.agent_reply %></p>
+        <p class="faint msg__replied">
+          You replied <%= time_ago_in_words(item.replied_at) %> ago.
+        </p>
+      </div>
+    <% elsif item.awaiting_reply? %>
+      <%# Sent, and the turn is running somewhere else. This state is persisted
+          rather than drawn client-side, so it is still here on a reload, on a
+          second tab, and on the phone in the other pocket. The card it replaces
+          itself with arrives over the same stream that pushed this one. %>
+      <div class="msg__thread" data-pending>
+        <p class="bubble bubble--user"><%= item.reply_body %></p>
+        <%# On one line: .bubble is white-space: pre-wrap, so ERB indentation
+            would render as indentation. %>
+        <p class="bubble bubble--agent bubble--thinking" aria-live="polite"><%= item.agent_name %> is replying<span class="dots">…</span></p>
+      </div>
+    <% else %>
+      <div class="msg__reply">
+        <% if item.reply_failed? %>
+          <%# The turn failed after the request that started it had already been
+              answered, so there is no flash left to say so — the card says it
+              instead, and keeps their words so retrying is one click. %>
+          <p class="bubble bubble--error"><%= item.agent_name %> couldn't answer just now. Your message wasn't sent.</p>
+        <% end %>
+
+        <%= form_with url: reply_inbox_message_path(item.id), class: "msg__composer" do |form| %>
+          <%# No agent field. Which agent answers comes off the delivery row
+              the engine wrote, resolved inside this account's scope — see
+              InboxController#reply. %>
+          <%= form.text_field :body, value: (item.reply_body if item.reply_failed?),
+                                     placeholder: "Reply to #{item.agent_name}…",
+                                     autocomplete: "off",
+                                     "aria-label": "Reply to #{item.agent_name}" %>
+          <%= form.submit(item.reply_failed? ? "Try again" : "Send",
+                          class: "btn btn--primary btn--small") %>
+        <% end %>
+
+        <div class="actions">
+          <% if item.invites_reply? && !item.reply_failed? %>
+            <%= button_to Inbox::AFFIRMATIVE, reply_inbox_message_path(item.id),
+                          params: { body: Inbox::AFFIRMATIVE },
+                          class: "btn btn--small", form_class: "inline-form" %>
+          <% end %>
+          <% unless item.read? %>
+            <%= button_to "Mark read", read_inbox_message_path(item.id),
+                          class: "btn btn--small btn--ghost", form_class: "inline-form" %>
+          <% end %>
+        </div>
+      </div>
+    <% end %>
+  </div>
+</div>

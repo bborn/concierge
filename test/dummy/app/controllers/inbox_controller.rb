@@ -37,31 +37,45 @@ class InboxController < ApplicationController
   #   * **Marking read and recording the exchange are the host's writes.** They
   #     have to happen with the turn, not in a follow-up request that can fail
   #     on its own and leave an answered question still flagged "new".
+  #
+  # ## The turn does not happen in this request
+  #
+  # It used to. Offline that reads as instant, because Dummy::ScriptedChat
+  # answers in microseconds; against a real provider it is a customer watching a
+  # form post spin for as long as the model takes to think. So this writes their
+  # words down, hands the turn to a job, and answers immediately with the card in
+  # its "sent, waiting" state. The answer arrives over the same Turbo Stream that
+  # pushes the agent's unprompted messages — which is the honest version of the
+  # symmetry: an agent's words reach an open page the same way whether the
+  # customer asked for them or not.
+  #
+  # The pending state is a persisted one (InboxMessage), not a spinner drawn in
+  # the browser, so a reload, a second tab, or a phone in another pocket all show
+  # the same thing.
   def reply
     item = inbox.find(params[:id])
     return head(:not_found) unless item
 
     text = params[:body].to_s.strip
     return redirect_to(inbox_path, alert: "Nothing to send.") if text.blank?
+    return redirect_to(inbox_path, alert: "#{item.agent_name} already answered that.") if item.replied?
 
-    answer(item, text)
+    ask(item, text)
   end
 
   private
 
-  def answer(item, text)
-    scope  = concierge_scope(item.agent_slug)
-    result = Concierge::Run.reactive(scope, item.reply_prompt(text))
+  def ask(item, text)
+    item.message.start_reply!(body: text)
+    InboxReplyJob.perform_later(item.message)
 
-    unless result.ok?
-      # The message stays unread and unanswered, so the customer can try again
-      # rather than being told their question landed when it did not.
-      return redirect_to inbox_path,
-                         alert: "#{item.agent_name} couldn't answer just now. Your message wasn't sent."
-    end
-
-    item.message.record_reply!(body: text, agent_reply: result.reply_text,
-                               run_id: result.run_record&.id)
-    redirect_to inbox_path, notice: "#{item.agent_name} replied."
+    redirect_to inbox_path, notice: "Sent — #{item.agent_name} is replying."
+  rescue StandardError => e
+    # The queue is down, so nothing will ever pick this up. Better to say so now
+    # than to leave the customer watching a card that will never resolve.
+    Rails.logger.error("[acme] could not enqueue reply for message #{item.id}: #{e.class}")
+    item.message.fail_reply!
+    redirect_to inbox_path,
+                alert: "#{item.agent_name} couldn't answer just now. Your message wasn't sent."
   end
 end

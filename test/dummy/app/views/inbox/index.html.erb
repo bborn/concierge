@@ -14,64 +14,21 @@
   <% end %>
 </div>
 
-<% if @items.any? %>
-  <div class="card card--flush">
-    <% @items.each do |item| %>
-      <div class="card__row msg <%= "msg--unread" unless item.read? %>">
-        <span class="avatar <%= "avatar--billing" if item.agent_slug == "billing" %>">
-          <%= item.agent_name.first %>
-        </span>
-        <div class="msg__body">
-          <div class="msg__head">
-            <span class="msg__who"><%= item.agent_name %></span>
-            <span class="faint"><%= item.sent_at.strftime("%-d %b, %H:%M") %></span>
-            <span class="pill"><%= item.kind %></span>
-            <% unless item.read? %><span class="pill pill--accent">new</span><% end %>
-          </div>
-          <div class="msg__text"><%= item.body %></div>
+<%# The live list. The layout already subscribes this page to the account's
+    stream; these are the two targets it pushes at — a new message is prepended
+    here and the empty card is removed, so an inbox that fills up while you are
+    looking at it fills up in front of you.
 
-          <% if item.replied? %>
-            <%# The loop closed. Both halves live on the host's own row: the words
-                are customer-facing text under the host's retention policy, and
-                the engine keeps the provenance for the turn that produced them. %>
-            <div class="msg__thread">
-              <p class="bubble bubble--user"><%= item.reply_body %></p>
-              <p class="bubble bubble--agent"><%= item.agent_reply %></p>
-              <p class="faint msg__replied">
-                You replied <%= time_ago_in_words(item.replied_at) %> ago.
-              </p>
-            </div>
-          <% else %>
-            <div class="msg__reply">
-              <%= form_with url: reply_inbox_message_path(item.id), class: "msg__composer" do |form| %>
-                <%# No agent field. Which agent answers comes off the delivery row
-                    the engine wrote, resolved inside this account's scope — see
-                    InboxController#reply. %>
-                <%= form.text_field :body, placeholder: "Reply to #{item.agent_name}…",
-                                           autocomplete: "off",
-                                           "aria-label": "Reply to #{item.agent_name}" %>
-                <%= form.submit "Send", class: "btn btn--primary btn--small" %>
-              <% end %>
+    `.card--flush` is on the container rather than around it so a prepended row
+    lands inside the card it belongs to. Empty, the container collapses (see
+    `#inbox-messages:empty` in application.css) rather than drawing a stray box
+    above the empty state. %>
+<div class="card card--flush" id="inbox-messages">
+  <%= render partial: "inbox/message", collection: @items, as: :item %>
+</div>
 
-              <div class="actions">
-                <% if item.invites_reply? %>
-                  <%= button_to Inbox::AFFIRMATIVE, reply_inbox_message_path(item.id),
-                                params: { body: Inbox::AFFIRMATIVE },
-                                class: "btn btn--small", form_class: "inline-form" %>
-                <% end %>
-                <% unless item.read? %>
-                  <%= button_to "Mark read", read_inbox_message_path(item.id),
-                                class: "btn btn--small btn--ghost", form_class: "inline-form" %>
-                <% end %>
-              </div>
-            </div>
-          <% end %>
-        </div>
-      </div>
-    <% end %>
-  </div>
-<% else %>
-  <div class="card empty">
+<% if @items.empty? %>
+  <div class="card empty" id="inbox-empty">
     <h2>Nothing yet</h2>
     <p>
       When <%= csm_persona&.name || "your agent" %> has something worth saying, it lands here.
@@ -88,3 +45,52 @@
   <%= link_to "delivery log", concierge.admin_deliveries_path %> ·
   <%= link_to "run provenance", concierge.admin_runs_path %>.
 </p>
+
+<script>
+  // Closing the gap between rendering this page and subscribing to the stream.
+  //
+  // A broadcast is fire-and-forget: anything pushed in the moment between the
+  // server rendering these cards and the browser's socket being confirmed
+  // reaches nobody. Against a real provider that window is invisible, because a
+  // model turn takes seconds. Offline it is the *normal* case — Dummy::
+  // ScriptedChat answers in about 80ms, comfortably inside a POST → redirect →
+  // GET, so the answer beats the subscription and the card sits on "Kit is
+  // replying…" until someone reloads. Which is the bug this whole change is
+  // about, wearing a different hat.
+  //
+  // So: once the socket is up, reconcile once against the server. This is not a
+  // poll and must not become one — it runs at most once per page load, and only
+  // when something on the page is still waiting. A turn that is genuinely slow
+  // re-renders as still-pending and we stop there, because by then the stream is
+  // connected and the answer will arrive the way it is supposed to.
+  //
+  // Vanilla and inline, like the chat widget: the demo host ships no bundler.
+  (function () {
+    var source = document.querySelector("turbo-cable-stream-source");
+    if (!source) return;
+
+    function catchUp() {
+      if (!document.querySelector("[data-pending]")) return;
+
+      fetch(location.pathname, { headers: { Accept: "text/html" }, credentials: "same-origin" })
+        .then(function (response) { return response.ok ? response.text() : null; })
+        .then(function (html) {
+          if (!html) return;
+          var fresh = new DOMParser().parseFromString(html, "text/html");
+          [ "inbox-messages", "inbox-badge" ].forEach(function (id) {
+            var next = fresh.getElementById(id), here = document.getElementById(id);
+            if (next && here) here.replaceWith(next);
+          });
+        })
+        .catch(function () { /* the stream is the path; this is only the net */ });
+    }
+
+    if (source.hasAttribute("connected")) return catchUp();
+
+    new MutationObserver(function (_records, observer) {
+      if (!source.hasAttribute("connected")) return;
+      observer.disconnect();
+      catchUp();
+    }).observe(source, { attributes: true, attributeFilter: [ "connected" ] });
+  })();
+</script>
