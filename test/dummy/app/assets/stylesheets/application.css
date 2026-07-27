@@ -294,6 +294,20 @@ input:focus, textarea:focus, select:focus { outline: 2px solid var(--accent); ou
 .msg__thread { margin-top: 10px; display: flex; flex-direction: column; gap: 8px; align-items: flex-start; }
 .msg__thread .bubble--user { align-self: flex-start; }
 .msg__replied { font-size: 12px; margin: 0; }
+.msg__reply .bubble--error { flex: 1 1 100%; margin: 0; }
+
+/* The list is the card, so a Turbo-prepended row lands inside it. Empty, it has
+   to disappear rather than draw a stray box above the empty state. */
+#inbox-messages:empty { display: none; }
+
+/* Waiting on a turn that is running somewhere else. Deliberately not a spinner:
+   a spinner says "this request is slow", and this request finished. */
+.bubble--thinking { color: var(--text-dim); font-style: italic; }
+.bubble--thinking .dots { animation: blink 1.4s steps(1) infinite; }
+@keyframes blink { 0%, 60% { opacity: 1; } 61%, 100% { opacity: 0.25; } }
+@media (prefers-reduced-motion: reduce) {
+  .bubble--thinking .dots { animation: none; }
+}
 
 /* --- chat widget -------------------------------------------------------- */
 

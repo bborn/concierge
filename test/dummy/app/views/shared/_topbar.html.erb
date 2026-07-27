@@ -8,7 +8,7 @@
       <%= link_to "Changelog", changelog_entries_path,
                   "aria-current": ("page" if controller_name == "changelog_entries") %>
       <%= link_to inbox_path, "aria-current": ("page" if controller_name == "inbox") do %>
-        Inbox<%= tag.span(inbox.unread_count, class: "badge") if inbox.unread_count.positive? %>
+        Inbox<%= render "shared/inbox_badge", count: inbox.unread_count %>
       <% end %>
       <%= link_to "Account", account_path,
                   "aria-current": ("page" if controller_name == "account") %>

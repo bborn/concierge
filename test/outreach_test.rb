@@ -45,6 +45,54 @@ module Concierge
       assert_equal :delivered, Outreach.deliver(@result, @subject, channel: :in_app)
     end
 
+    # --- In-app has to actually surface (design §3.5) -------------------------
+
+    test "in-app is not a channel at all without a broadcaster to surface through" do
+      # Silently no-opping and auditing it as :delivered is the ledger asserting
+      # the customer was reached over the one channel that had nowhere to reach
+      # them. The router falls through to email instead.
+      Concierge.configure { |c| c.in_app_broadcaster = nil }
+
+      assert_equal :delivered, Outreach.deliver(@result, @subject, channel: :in_app)
+      assert_equal "email", ChannelDelivery.for_subject(@subject).sole.channel
+    end
+
+    test "with no other channel either, nothing is sent and nothing is audited" do
+      Concierge.configure do |c|
+        c.in_app_broadcaster = nil
+        c.channels = [ Concierge::Channel::InApp ]
+      end
+
+      assert_equal :no_channel, Outreach.deliver(@result, @subject, channel: :in_app)
+      assert_equal 0, ChannelDelivery.count
+    end
+
+    # The delivery row is written before the send so the host's broadcaster can
+    # read it — an in-app surface has to render *who* sent the message, and the
+    # payload does not say. A send that then fails must not leave the row behind.
+    test "the audit row for a failed send does not survive it" do
+      Concierge.configure do |c|
+        c.in_app_broadcaster = ->(_subject, _payload) { raise "the panel is on fire" }
+      end
+
+      assert_equal :failed, Outreach.deliver(@result, @subject, channel: :in_app)
+      assert_equal 0, ChannelDelivery.count
+    end
+
+    test "the host's broadcaster can see the delivery row for the message it is surfacing" do
+      seen = nil
+      Concierge.configure do |c|
+        c.in_app_broadcaster = lambda do |_subject, payload|
+          seen = ChannelDelivery.find_by(unsubscribe_token: payload[:unsubscribe_token])
+        end
+      end
+
+      Outreach.deliver(@result, @subject, channel: :in_app)
+
+      assert seen, "the broadcaster was handed a message whose ledger entry did not exist yet"
+      assert_equal "in_app", seen.channel
+    end
+
     test "the unsubscribe route opts the subject out and blocks the next send" do
       Outreach.deliver(@result, @subject, channel: :in_app)
       token = ChannelDelivery.for_subject(@subject).last.unsubscribe_token

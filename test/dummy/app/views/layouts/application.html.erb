@@ -14,9 +14,27 @@
 
     <link rel="icon" href="/icon.svg" type="image/svg+xml">
     <%= stylesheet_link_tag "application" %>
+    <%= javascript_include_tag "turbo.min", type: "module" %>
   </head>
 
-  <body>
+  <%# Turbo is here for exactly one thing: Streams, so in-app delivery can
+      ACTIVELY surface instead of waiting for the customer to reload (design
+      §3.5). Drive is off — `data-turbo="false"` on the body covers every link
+      and form inside it.
+
+      That is deliberate rather than lazy. Turning Drive on would change how
+      every form and link in this app behaves (303 redirects, method-preserving
+      follows) including the ones that navigate into the mounted engine admin,
+      where a Drive visit leaves Turbo loaded on pages built without it. None of
+      that buys the demo anything: the story here is "the agent's answer arrives
+      on its own", and that is a Stream, not a navigation. %>
+  <body data-turbo="false">
+    <%# One stream per account, signed by Turbo, rendered from the session's own
+        tenant and never from a parameter. It is in the layout rather than on the
+        inbox page because the badge has to be able to go up while the customer
+        is somewhere else entirely. %>
+    <%= turbo_stream_from current_tenant if signed_in? %>
+
     <%= render "shared/topbar" if signed_in? %>
 
     <main class="page">

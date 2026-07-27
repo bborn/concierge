@@ -28,12 +28,31 @@ module Concierge
       token   = Governance.generate_token
       payload = payload.merge(unsubscribe_token: token)
 
-      if channel.deliver(payload)
-        governance.record!(scope, channel: channel.name, kind: kind, payload: payload, token: token)
-        :delivered
-      else
-        :failed
-      end
+      # The audit row goes in BEFORE the send, and is rolled back if the send
+      # fails — rather than after a send that succeeded.
+      #
+      # The payload is the only thing a channel is handed, and it says what was
+      # said, not who said it: no agent, no timestamp. That is fine for email,
+      # which renders one message into a mailbox. It is not fine for in-app,
+      # which has to render "Bill · billing · 14:02" onto a live page, because
+      # Bill and Kit are different agents with different personas and authority
+      # (§10.1) and the customer is owed the difference. The only place that
+      # knows is this delivery row — so a host asked to surface a message while
+      # its own ledger entry does not exist yet is a host that cannot surface it,
+      # which is how in-app came to only ever persist.
+      #
+      # The trade, plainly: a crash between the write and the send now leaves a
+      # row for a message that may not have gone out, where before it lost the
+      # row for a message that may have. For a ledger whose job is frequency caps
+      # and quiet hours, over-counting errs toward silence and under-counting
+      # errs toward pestering someone. This is the better way to be wrong.
+      delivery = governance.record!(scope, channel: channel.name, kind: kind,
+                                           payload: payload, token: token)
+
+      return :delivered if channel.deliver(payload)
+
+      delivery.destroy
+      :failed
     end
 
     def initialize(result, scope, channel:, kind:, governance:)
