@@ -51,14 +51,18 @@ module Concierge
 
       reply = chat.ask(@trigger[:message])
       success(reply)
-    rescue RubyLLM::Error, RubyLLM::ConfigurationError => e
+    rescue RubyLLM::Error, RubyLLM::ConfigurationError, RubyLLM::ModelNotFoundError => e
       # Streaming may deliver partial tool-call args and errors mid-stream; the
       # harness absorbs both so a bad turn never crashes the host (design §6).
       #
-      # ConfigurationError is listed separately because RubyLLM derives it from
-      # StandardError, not from RubyLLM::Error — so a host with no API key was
-      # blowing straight through this rescue and out to the caller, breaking the
-      # one promise this class makes.
+      # ConfigurationError and ModelNotFoundError are listed separately because
+      # RubyLLM derives them from StandardError, not from RubyLLM::Error — so a
+      # host with no API key, or one asking for a model no registry it can reach
+      # has heard of, was blowing straight through this rescue and out to the
+      # caller, breaking the one promise this class makes. ChatResolver raises the
+      # latter deliberately, on line 45 above, for a model that is genuinely
+      # unknown; "genuinely unknown" is a failed Result like any other, not an
+      # exception the host has to have thought about (task 5018).
       record_provenance(status: "failed", error_class: e.class.name)
       Result.failure(e, model: model)
     end

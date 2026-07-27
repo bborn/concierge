@@ -207,8 +207,12 @@ deliver_in_app(
 # `sole` on purpose: this is the only message Acme has at this point in the file,
 # and if that stops being true the seed should fail loudly rather than answer the
 # wrong one.
-InboxMessage.where(tenant_id: acme.id).sole.record_reply!(
+answered = InboxMessage.where(tenant_id: acme.id).sole
+answered.start_reply!(
   body: "Yes — tell me if we go a couple of weeks without publishing anything.",
+  at: 27.days.ago + 3.hours
+)
+answered.complete_reply!(
   agent_reply: "Noted, I've written that down. If two weeks go by with nothing " \
                "published I'll say so here rather than let it drift.",
   at: 27.days.ago + 3.hours

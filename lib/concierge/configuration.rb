@@ -42,7 +42,11 @@ module Concierge
     # Callable(subject) -> email address, so the gem stays schema-agnostic.
     attr_accessor :email_address_for
 
-    # Callable(subject, payload) that surfaces an in-app message (Turbo broadcast).
+    # Callable(subject, payload) that ACTIVELY surfaces an in-app message — opens
+    # a panel, raises a badge, pushes a Turbo Stream. Persisting a row the
+    # customer will find on their next visit is half of it; see Channel::InApp
+    # for why the engine ships no default and why the channel refuses to report a
+    # delivery without this hook.
     attr_accessor :in_app_broadcaster
 
     # Host used to build absolute unsubscribe URLs in emails.
@@ -349,8 +353,22 @@ module Concierge
     # turn to the host's own message store — the half of the transcript +to_llm+
     # alone drops on the floor. See PersistentChat for why the system prompt
     # deliberately does *not* go there with it.
+    #
+    # +assume_model_exists+ is set because the question +to_llm+ would otherwise
+    # ask has already been answered, better, by the record it is being asked
+    # about. +to_llm+ re-resolves +model_association.model_id+ through
+    # +Models.resolve+ (ruby_llm 1.16.0, chat_methods.rb:80-87), and with a
+    # provider named and nothing assumed that lands on +Models.find+ against the
+    # process-wide memoized registry. On a Rails host that registry is the
+    # +models+ table, holding only the models the host has already talked to — so
+    # the lookup raises +ModelNotFoundError+ for the very row it was handed, and
+    # for the row ChatResolver wrote moments earlier (the memo predates the
+    # insert). A model id that reached this point is one the host's own table
+    # names and that ChatResolver resolved against complete data; re-deriving it
+    # from a partial snapshot can only make the answer worse. See task 5018.
     DEFAULT_CHAT_FACTORY = lambda do |model:, chat_record: nil|
       if chat_record.respond_to?(:to_llm)
+        chat_record.assume_model_exists = true if chat_record.respond_to?(:assume_model_exists=)
         PersistentChat.new(chat_record.to_llm, chat_record)
       else
         RubyLLM.chat(model: model)

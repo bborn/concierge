@@ -70,6 +70,23 @@ module Concierge
         )
       end
 
+      # Answering an inbox message the way the browser does, and then letting the
+      # queue catch up.
+      #
+      # The turn no longer runs inside the POST — the controller writes the
+      # customer's words down, enqueues InboxReplyJob and answers immediately, so
+      # a test that only posts is asserting against a card that says "Kit is
+      # replying…". Tests about the *pending* half post without this and drive
+      # the queue themselves.
+      #
+      # A literal path, not a helper: a test that has just been into the mounted
+      # engine gets "/concierge" prepended to host path helpers (see the note at
+      # the bottom of this module).
+      def reply_to(message, body, params: {})
+        post "/inbox/#{message.id}/reply", params: { body: body }.merge(params)
+        perform_enqueued_jobs(only: InboxReplyJob)
+      end
+
       # The host as a genuinely keyless demo: the environment variable gone, the
       # config re-read so ConciergeSetup installs its offline stand-in instead of
       # leaving FakeChat in place, and RubyLLM's credentials blanked so nothing

@@ -130,6 +130,23 @@ module Concierge
       assert_equal 1, Conversation.for_subject(@subject).count
     end
 
+    # ...and the same holds with the key present. Worth stating separately (task
+    # 5018): the test above clears the credential, so it could be read as a claim
+    # about the *offline* path, and the failure it guards was filed against a host
+    # whose key was set. Nothing about the resolution turns on the credential —
+    # which is the point, and is what this pins.
+    test "a partial host registry resolves the same way with credentials present" do
+      Concierge.config.default_provider = nil
+
+      with_partial_model_registry("gpt-4.1-nano" => "openai") do
+        chat = assert_nothing_raised { ChatResolver.call(@subject) }
+
+        assert chat.persisted?
+        assert_equal "claude-sonnet-4-5", chat.model_id
+        assert_equal "anthropic", chat.provider
+      end
+    end
+
     # A model genuinely nobody has heard of is still an error, and RubyLLM's own
     # is the one that names it. Run turns it into a failed Result.
     test "a model neither registry knows raises RubyLLM's own error" do

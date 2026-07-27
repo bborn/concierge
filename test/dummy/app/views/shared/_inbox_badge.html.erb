@@ -1,0 +1,9 @@
+<%# The "raise a badge" half of active in-app surfacing (design §3.5), and the
+    reason the layout subscribes to the stream on every page and not just the
+    inbox: a message that arrives while the customer is reading the changelog
+    has to reach them there.
+
+    Rendered even at zero, because a Turbo Stream replaces a target that exists —
+    an empty, class-less span is the thing that is there to be replaced. %>
+<%= tag.span(count.positive? ? count : nil,
+             id: "inbox-badge", class: ("badge" if count.positive?)) %>
