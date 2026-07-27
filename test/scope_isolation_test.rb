@@ -738,6 +738,50 @@ module Concierge
       end
     end
 
+    # ...and the same grid over the path an *online* host takes (task 5018). The
+    # test above swaps in a scripted chat, so it never reaches the factory that
+    # resumes the persisted conversation — and that factory asked the memoized
+    # registry to re-resolve the model it had just been handed, which under a
+    # stale table raised ModelNotFoundError. RubyLLM derives that from
+    # StandardError, so it escaped Run's rescue: not a failed Result for the cell
+    # that hit it, but a raise mid-grid, leaving the cells behind it with an
+    # AgentRun row apiece and the cells ahead of it with nothing.
+    #
+    # The isolation claim is therefore about the whole grid completing, and about
+    # every cell's chat, run and words still being its own once it does.
+    test "a partial registry leaves every cell's online turn its own" do
+      Concierge.config.default_provider = nil
+      Concierge.config.chat_factory = persisting_chat_factory
+
+      with_partial_model_registry("gpt-4.1-nano" => "openai") do
+        @grid.each do |(agent_slug, account), scope|
+          result = nil
+          assert_nothing_raised do
+            result = with_model_reply("reply for #{agent_slug}/#{account}") do
+              Concierge::Run.reactive(scope, "question from #{agent_slug}/#{account}")
+            end
+          end
+
+          assert result.ok?, "#{agent_slug}/#{account} failed under a stale registry: #{result.error.inspect}"
+        end
+      end
+
+      assert_equal 4, Concierge::Conversation.count
+      assert_equal 4, Concierge::AgentRun.count, "the grid was left half populated"
+
+      @grid.each do |(agent_slug, account), scope|
+        run = Concierge::AgentRun.for_scope(scope).sole
+
+        assert_equal "question from #{agent_slug}/#{account}", run.prompt_text
+        assert_equal "reply for #{agent_slug}/#{account}", run.reply_text
+        assert_equal Concierge::Conversation.find_by_scope(scope).chat_id, run.chat_id
+
+        asked = Concierge.chat_model.find(run.chat_id).messages.where(role: "user").pluck(:content)
+        assert_equal [ "question from #{agent_slug}/#{account}" ], asked,
+                     "#{agent_slug}/#{account}'s thread holds another cell's words"
+      end
+    end
+
     # Credentials coming back must not merge cells either: two agents over one
     # account still get two conversations — the same two they had offline, now
     # continued rather than replaced.

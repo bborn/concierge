@@ -93,6 +93,65 @@ module Concierge
       assert_nil run.message_id, "a failed turn recorded a reply it never got"
     end
 
+    # Regression (task 5018): RubyLLM derives ModelNotFoundError from
+    # StandardError rather than RubyLLM::Error — the same trap ConfigurationError
+    # laid above — so it sailed through Run's rescue and out to the host. The
+    # engine raises it deliberately, from ChatResolver, for a model neither the
+    # host's registry nor RubyLLM's bundled data has heard of; that is a run that
+    # failed, and Run's whole contract is that a failed run comes back as a
+    # Result.
+    test "a model no registry knows is a failed Result, not a raise" do
+      Concierge.config.default_provider = nil
+      Concierge.config.default_model = "no-such-model-anywhere"
+
+      result = nil
+      assert_nothing_raised { result = Concierge::Run.reactive(@subject, "hi") }
+
+      refute result.ok?, "an unresolvable model reported a successful run"
+      assert_kind_of RubyLLM::ModelNotFoundError, result.error
+    end
+
+    # ...and the operator can find out why. A raise leaves no row at all, so the
+    # audit trail simply has a gap where a turn was attempted.
+    test "an unresolvable model records failed provenance" do
+      Concierge.config.default_provider = nil
+      Concierge.config.default_model = "no-such-model-anywhere"
+
+      Concierge::Run.reactive(@subject, "hi")
+      run = Concierge::AgentRun.order(:id).last
+
+      assert_equal "failed", run.status
+      assert_equal "RubyLLM::ModelNotFoundError", run.error_class
+      assert_nil run.chat_id, "a run recorded a conversation it never opened"
+    end
+
+    # Regression (task 5018): the filed defect. A credentialed host whose `models`
+    # table is stale — the normal state of any Rails host on acts_as_model, which
+    # only ever holds the models it has already talked to — and whose
+    # default_provider is nil, which is documented and supported. ChatResolver
+    # resolves that fine (it falls back to RubyLLM's bundled data), but the
+    # default chat factory then asked the *memoized* registry the same question a
+    # second time and got ModelNotFoundError for the row it had just been handed.
+    #
+    # Nothing about this is offline: the key is set, the provider is reachable,
+    # and the turn must simply happen.
+    test "a stale host registry still completes a turn" do
+      Concierge.config.default_provider = nil
+      Concierge.config.chat_factory = persisting_chat_factory
+
+      with_partial_model_registry("gpt-4.1-nano" => "openai") do
+        result = nil
+        assert_nothing_raised do
+          result = with_model_reply("Answered despite a stale registry.") do
+            Concierge::Run.reactive(@subject, "hi")
+          end
+        end
+
+        assert result.ok?, "a stale registry failed the turn: #{result.error.inspect}"
+        assert_equal "Answered despite a stale registry.", result.reply_text
+      end
+    end
+
     test "a tool call during the run mutates only this subject's data" do
       other = Tenant.create!(name: "Beta", plan: "free")
       Concierge::Test::FakeChat.script(
