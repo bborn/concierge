@@ -48,7 +48,7 @@ class ChatWidgetTest < ActionDispatch::IntegrationTest
   end
 
   test "a failed run returns a graceful error" do
-    Concierge::Test::FakeChat.raise_with(RubyLLM::Error.new(nil, "boom"))
+    Concierge::Test::FakeChat.raise_with(RubyLLM::Error.new("boom"))
 
     post "/concierge/accounts/#{@tenant.id}/chat", params: { message: "hi" }
 

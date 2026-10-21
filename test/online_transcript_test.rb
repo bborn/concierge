@@ -4,7 +4,7 @@ module Concierge
   # The persistent-Chat feature, actually tested.
   #
   # `Run` drives whatever `config.chat_factory` returns, and the default returned
-  # `chat_record.to_llm` — a RubyLLM::Chat. In ruby_llm 1.16 that object's
+  # `chat_record.to_llm` — a RubyLLM::Chat. In ruby_llm (1.16 then, 2.1 now) that object's
   # persistence callbacks write the *assistant* message and nothing else; the user
   # turn is written by `ChatMethods#ask` on the AR record, which nobody was
   # calling. So after a turn the host's messages table held exactly one row, the

@@ -24,21 +24,22 @@ module Dummy
   # a double, so this writes both itself, in that order, for the same reason
   # PersistentChat is careful about it: the thread is replayed from row order.
   class ScriptedChat
-    Reply = Struct.new(:content, :tool_calls, :input_tokens, :output_tokens, keyword_init: true)
+    # Shaped like a ruby_llm 2.x +RubyLLM::Message+: usage is one +tokens+ value.
+    Reply = Struct.new(:content, :tool_calls, :tokens, keyword_init: true)
 
     def initialize(chat_record = nil)
       @instructions = +""
       @record = chat_record
     end
 
-    def with_instructions(text, replace: false)
-      @instructions = replace ? text.to_s.dup : "#{@instructions}\n#{text}"
+    def with_instructions(text, append: false)
+      @instructions = append ? "#{@instructions}\n#{text}" : text.to_s.dup
       self
     end
 
     def with_temperature(_value) = self
     def with_context(_context)   = self
-    def with_params(**)          = self
+    def with_provider_options(**) = self
     def with_tools(*)            = self
 
     def ask(prompt)
@@ -46,7 +47,7 @@ module Dummy
 
       reply = Reply.new(
         content: answer_for(prompt.to_s), tool_calls: [],
-        input_tokens: 320, output_tokens: 48
+        tokens: RubyLLM::Tokens.new(input: 320, output: 48)
       )
       persist(role: :assistant, content: reply.content)
 

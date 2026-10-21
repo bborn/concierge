@@ -345,7 +345,7 @@ class HostInboxTest < ActionDispatch::IntegrationTest
     # answered long before it failed, so the card has to say it instead.
     deliver_in_app(csm_scope(@acme), "Want a hand with the draft?")
     message = @acme.inbox_messages.sole
-    Concierge::Test::FakeChat.raise_with(RubyLLM::Error.new(nil, "overloaded"))
+    Concierge::Test::FakeChat.raise_with(RubyLLM::Error.new("overloaded"))
 
     reply_to(message, "Yes please.")
 
@@ -364,7 +364,7 @@ class HostInboxTest < ActionDispatch::IntegrationTest
   test "a failed reply can be sent again" do
     deliver_in_app(csm_scope(@acme), "Want a hand with the draft?")
     message = @acme.inbox_messages.sole
-    Concierge::Test::FakeChat.raise_with(RubyLLM::Error.new(nil, "overloaded"))
+    Concierge::Test::FakeChat.raise_with(RubyLLM::Error.new("overloaded"))
     reply_to(message, "Yes please.")
 
     Concierge::Test::FakeChat.script(reply: "Of course — here's how.")

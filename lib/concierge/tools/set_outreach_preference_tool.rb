@@ -6,8 +6,8 @@ module Concierge
     class SetOutreachPreferenceTool < Concierge::Capability::NativeTool
       description "Set how often this account wants to hear from us. " \
                   "Use when the customer asks to be contacted more or less."
-      param :frequency,
-        desc: "One of: off, less, normal, more.",
+      parameter :frequency,
+        description: "One of: off, less, normal, more.",
         required: true
 
       def name
