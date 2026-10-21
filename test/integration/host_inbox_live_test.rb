@@ -110,7 +110,7 @@ class HostInboxLiveTest < ActionDispatch::IntegrationTest
   test "a turn that fails pushes the failure, because no flash is left to carry it" do
     deliver_in_app(csm_scope(@acme), "Want a hand with the draft?")
     message = @acme.inbox_messages.sole
-    Concierge::Test::FakeChat.raise_with(RubyLLM::Error.new(nil, "overloaded"))
+    Concierge::Test::FakeChat.raise_with(RubyLLM::Error.new("overloaded"))
 
     post reply_inbox_message_path(message), params: { body: "Yes please." }
 

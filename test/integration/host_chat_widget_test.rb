@@ -108,13 +108,13 @@ class HostChatWidgetTest < ActionDispatch::IntegrationTest
     sign_in_as @dana
 
     # A real model's tool calls land on the messages *before* the final reply,
-    # persisted by acts_as_chat. Offline there are none, so the rows are written
+    # persisted by acts_as_chat into `ruby_llm_tool_calls`. Offline there are none, so the rows are written
     # here — this is what the widget reads back to draw its ⚙ chips.
     chat      = Concierge::ChatResolver.call(csm_scope(@acme))
     Message.create!(chat_id: chat.id, role: "user", content: "remember this")
     assistant = Message.create!(chat_id: chat.id, role: "assistant", content: "")
-    ToolCall.create!(message_id: assistant.id, tool_call_id: "call_1", name: "remember",
-                     arguments: { body: "Dana wants a Q3 launch" })
+    RubyLLM::ActiveRecord::ToolCall.create!(message: assistant, tool_call_id: "call_1", name: "remember",
+                                            arguments: { body: "Dana wants a Q3 launch" })
 
     get agent_activity_path(agent: :csm)
 
@@ -127,8 +127,8 @@ class HostChatWidgetTest < ActionDispatch::IntegrationTest
 
     chat      = Concierge::ChatResolver.call(csm_scope(@globex))
     assistant = Message.create!(chat_id: chat.id, role: "assistant", content: "")
-    ToolCall.create!(message_id: assistant.id, tool_call_id: "call_2", name: "recall",
-                     arguments: {})
+    RubyLLM::ActiveRecord::ToolCall.create!(message: assistant, tool_call_id: "call_2", name: "recall",
+                                            arguments: {})
 
     get agent_activity_path(agent: :csm)
 

@@ -125,7 +125,7 @@ module Concierge
     end
 
     test "a failed run is still recorded, with the error class" do
-      Concierge::Test::FakeChat.raise_with(RubyLLM::Error.new(nil, "boom"))
+      Concierge::Test::FakeChat.raise_with(RubyLLM::Error.new("boom"))
 
       Concierge::Run.reactive(@csm, "hi")
 

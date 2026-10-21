@@ -36,22 +36,23 @@ module Concierge
     # host that keeps a transcript and one that keeps nothing.
     #
     # acts_as_chat resolves a model in a before_save, and it only does so when it
-    # was handed a *string*: +resolve_model_from_strings+ returns immediately when
-    # +model_association+ is already set and no string is pending (ruby_llm 1.16.0,
-    # chat_methods.rb:46-49). Handing it a string is what reached +Models.resolve+,
-    # which instantiates the provider — ensure_configured!, raise — *before* it
-    # honours assume_exists. There is genuinely no combination of flags that
-    # survives that; task 4997 checked each one. So for a phase a keyless host got
-    # no host Chat at all, and with it no persisted conversation: every transcript
-    # surface in the product read empty offline, and a change to what the engine
-    # persists could not be demonstrated by driving the running demo at all.
+    # was handed an id: +ChatMethods#model=+ with a +RubyLLM::ActiveRecord::Model+
+    # clears the pending id, and +resolve_model+ then has nothing to do (ruby_llm
+    # 2.1.1, active_record/chat_methods.rb). Handing it an id is what reaches
+    # +Models.resolve+, which instantiates the provider — ensure_configured!,
+    # raise — and so a keyless host would get no host Chat at all, and with it no
+    # persisted conversation: every transcript surface in the product would read
+    # empty offline (task 4997).
     #
     # The way out was never a flag, it was ownership. Concierge resolves the model
     # itself — the same registry data RubyLLM would have read, none of the provider
-    # object it would have built — writes the host's `models` row, and assigns the
-    # association. The before_save then has nothing left to do, and creating the
-    # Chat needs no credentials. Online and offline become one path, which is the
-    # point: the demo now exercises the code the engine actually runs.
+    # object it would have built — writes the `ruby_llm_models` row, and assigns
+    # the association. The before_save then has nothing left to do, and creating
+    # the Chat needs no credentials. Online and offline become one path, which is
+    # the point: the demo exercises the code the engine actually runs. It also
+    # keeps RubyLLM's own fallback from running — on an empty registry table that
+    # fallback copies the *entire* model catalogue into the host's database just
+    # to pin one row.
     #
     # Losing the *model* is still loud. A host with no key and no offline
     # chat_factory gets the provider's own ConfigurationError back as a failed
@@ -65,7 +66,7 @@ module Concierge
       chat.model = record
     end
 
-    # The host's `models` row for this model, created if the host has never seen
+    # The `ruby_llm_models` row for this model, created if the host has never seen
     # it. This is exactly the row acts_as_chat's before_save would have written; we
     # write it one step earlier, from data that needs no provider.
     #
@@ -81,18 +82,22 @@ module Concierge
       find_or_create_model(registry, model_info)
     end
 
+    # ruby_llm 2.x retired the host-owned +acts_as_model+ class: an acts_as_chat
+    # chat always belongs_to the engine-owned +RubyLLM::ActiveRecord::Model+
+    # (table +ruby_llm_models+). Read it off the association rather than naming
+    # it, so a host chat class that is not acts_as_chat simply has no registry.
     def host_model_class
       chat_class = Concierge.chat_model
-      return unless chat_class.respond_to?(:model_class)
+      return unless chat_class.include?(RubyLLM::ActiveRecord::ChatMethods)
 
-      chat_class.model_class.constantize
+      chat_class.reflect_on_association(:model)&.klass
     rescue NameError
       nil
     end
 
     # Find-then-create rather than find_or_create_by! so a second process losing
     # the race re-reads the row the winner wrote instead of failing a run over the
-    # uniqueness index acts_as_model declares on (model_id, provider).
+    # uniqueness the registry declares on (model_id, provider).
     def find_or_create_model(registry, info)
       registry.find_by(model_id: info.id, provider: info.provider) ||
         registry.from_llm(info).tap(&:save!)
@@ -100,30 +105,39 @@ module Concierge
       registry.find_by!(model_id: info.id, provider: info.provider)
     end
 
-    # A faithful port of RubyLLM::Models.resolve (1.16.0, models.rb:154-183) with
-    # the one line removed that needs credentials — +provider_class.new(config)+.
-    # Same inputs, same answers, no provider object:
+    # A port of RubyLLM::Models.resolve with the one line removed that needs
+    # credentials — +provider_class.new(config)+. Same inputs, no provider object:
     #
     #   * a host that names its provider assumes the model exists, which is what
-    #     the old pin_model already told RubyLLM to do, and gets the assumed
-    #     default — so the pinned model id does not change under this rewrite;
-    #   * a *local* provider (ollama and friends) consults the registry first,
-    #     exactly as resolve does, because there the registry is authoritative;
+    #     the default chat factory tells RubyLLM to do too, and gets the assumed
+    #     default — so the pinned model id is exactly the id the host configured,
+    #     as it always has been. (2.x +resolve+ now consults the registry first
+    #     even when assuming, which would pin an alias's dated id instead; the
+    #     runtime chat still resolves that alias itself, so pinning the
+    #     configured id keeps existing conversations' rows stable for nothing);
+    #   * a *local* provider (ollama and friends), or one that declares
+    #     +assume_models_exist?+, consults the registry first, exactly as resolve
+    #     does, because there the registry is authoritative;
     #   * a host that names no provider gets the registry's own answer, alias
     #     resolution and all — resolve's other branch;
     #   * ...and if that host's registry is partial, ModelRegistry falls back to
     #     RubyLLM's bundled data rather than reading a miss as "no such model".
-    #     Not a nicety: without it a keyless host on acts_as_model would raise
-    #     ModelNotFoundError here for every model its own table has never held,
-    #     which is the shape of the defect task 5014 fixed one layer up.
+    #     Not a nicety: without it a keyless host whose registry table holds a few
+    #     rows would raise ModelNotFoundError here for every model it has never
+    #     held, which is the shape of the defect task 5014 fixed one layer up.
     def model_info
       provider = configured_provider
       return registry_info_for(@model) unless provider
 
       provider_class = RubyLLM::Provider.providers[provider.to_sym] || raise_unknown_provider(provider)
 
-      found = ModelRegistry.find(@model, provider) if provider_class.local?
-      found || RubyLLM::Model::Info.default(@model, provider_class.slug)
+      found = ModelRegistry.find(@model, provider) if registry_authoritative?(provider_class)
+      found || RubyLLM::Model.default(@model, provider_class.slug)
+    end
+
+    def registry_authoritative?(provider_class)
+      provider_class.local? ||
+        (provider_class.respond_to?(:assume_models_exist?) && provider_class.assume_models_exist?)
     end
 
     # Word for word what Models.resolve says about a provider it does not know, so

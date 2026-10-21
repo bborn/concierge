@@ -155,7 +155,7 @@ module Concierge
     test "a failed run links to no reply" do
       persisting_host!
       Concierge.config.chat_factory = lambda do |model:, chat_record: nil|
-        Concierge::Test::FakeChat.raise_with(RubyLLM::Error.new(nil, "boom"))
+        Concierge::Test::FakeChat.raise_with(RubyLLM::Error.new("boom"))
         Concierge::Test::FakeChat.current
       end
 

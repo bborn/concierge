@@ -33,7 +33,7 @@ module Concierge
         return if File.exist?(File.join(destination_root, "app/models/chat.rb"))
 
         say <<~MSG, :yellow
-          Concierge builds on RubyLLM's Chat/Message/ToolCall models but none were found.
+          Concierge builds on RubyLLM's Chat/Message models (ruby_llm 2.1+) but none were found.
           Run the RubyLLM install first:
 
               bin/rails generate ruby_llm:install

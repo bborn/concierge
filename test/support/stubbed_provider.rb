@@ -23,7 +23,7 @@ module Concierge
       Response = Struct.new(:body, :status, :headers)
 
       module Interception
-        def post(url, payload, &)
+        def post(url, payload, **, &)
           raise Thread.current[:concierge_stubbed_error] if Thread.current[:concierge_stubbed_error]
 
           body = Thread.current[:concierge_stubbed_completion]
@@ -38,7 +38,7 @@ module Concierge
         end
       end
 
-      RubyLLM::Connection.prepend(Interception)
+      RubyLLM::Transport::Connection.prepend(Interception)
 
       # Runs the block with one scripted Anthropic completion in place. The body
       # is the provider's own wire format, so the parser does its real work.
@@ -59,7 +59,7 @@ module Concierge
       # over the same real RubyLLM path. A double that raises instead of the chat
       # would skip the persistence callbacks entirely, which is exactly what has to
       # be under test when the question is "what did a failed turn leave behind?"
-      def with_model_error(error = RubyLLM::Error.new(nil, "the provider fell over"))
+      def with_model_error(error = RubyLLM::Error.new("the provider fell over"))
         Thread.current[:concierge_stubbed_error] = error
         yield
       ensure

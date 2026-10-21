@@ -97,8 +97,13 @@ bin/rails generate concierge:install
 bin/rails db:migrate
 ```
 
-Concierge builds on RubyLLM's `Chat`/`Message`/`ToolCall` models. If you don't
-have them yet, run `bin/rails generate ruby_llm:install` first. Do **not** add
+Concierge builds on RubyLLM's `Chat`/`Message` models and requires **ruby_llm
+2.1** (2.1.1 or later). If you don't have them yet, run `bin/rails generate
+ruby_llm:install` first; RubyLLM itself owns the `ruby_llm_models`,
+`ruby_llm_tool_calls` and `ruby_llm_usages` tables, and every chat belongs to a
+`ruby_llm_models` row (`chats.ruby_llm_model_id`). Coming from ruby_llm 1.x, run
+RubyLLM's own upgrade generator (`bin/rails generate ruby_llm:upgrade`) and drop
+your `Model`/`ToolCall` classes and `config.use_new_acts_as`. Do **not** add
 `validates :content, presence: true` to the `Message` model — RubyLLM writes the
 assistant message empty first.
 

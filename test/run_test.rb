@@ -33,7 +33,7 @@ module Concierge
     end
 
     test "a mid-stream RubyLLM error becomes a failed Result, never raised" do
-      Concierge::Test::FakeChat.raise_with(RubyLLM::Error.new(nil, "boom"))
+      Concierge::Test::FakeChat.raise_with(RubyLLM::Error.new("boom"))
 
       result = nil
       assert_nothing_raised { result = Concierge::Run.reactive(@subject, "hi") }
@@ -125,8 +125,8 @@ module Concierge
       assert_nil run.chat_id, "a run recorded a conversation it never opened"
     end
 
-    # Regression (task 5018): the filed defect. A credentialed host whose `models`
-    # table is stale — the normal state of any Rails host on acts_as_model, which
+    # Regression (task 5018): the filed defect. A credentialed host whose `ruby_llm_models`
+    # table is stale — the normal state of any Rails host on acts_as_chat, which
     # only ever holds the models it has already talked to — and whose
     # default_provider is nil, which is documented and supported. ChatResolver
     # resolves that fine (it falls back to RubyLLM's bundled data), but the
