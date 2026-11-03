@@ -80,7 +80,9 @@ class AgentController < ApplicationController
     last_ask = messages.rindex { |m| m.role.to_s == "user" }
     turn     = last_ask ? messages[(last_ask + 1)..] : messages
 
-    turn.to_a.flat_map { |m| m.tool_calls.map { |call| { name: call.name, arguments: call.arguments } } }
+    # ruby_llm 2.x: Message#tool_calls is a Hash of call id => RubyLLM::ToolCall,
+    # not an association — iterating it directly yields [id, call] pairs.
+    turn.to_a.flat_map { |m| m.tool_calls.values.map { |call| { name: call.name, arguments: call.arguments } } }
   end
 
   def agent_slug

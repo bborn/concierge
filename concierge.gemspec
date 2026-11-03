@@ -14,7 +14,7 @@ Gem::Specification.new do |spec|
                      "scheduling."
   spec.license     = "MIT"
 
-  spec.required_ruby_version = ">= 3.1.3"
+  spec.required_ruby_version = ">= 3.2"
 
   spec.metadata["homepage_uri"]    = spec.homepage
   spec.metadata["source_code_uri"] = spec.homepage
@@ -26,6 +26,6 @@ Gem::Specification.new do |spec|
   end
 
   spec.add_dependency "rails", ">= 7.1"
-  spec.add_dependency "ruby_llm", ">= 1.14"
+  spec.add_dependency "ruby_llm", "~> 2.1", ">= 2.1.1"
   spec.add_dependency "fugit", ">= 1.9"
 end

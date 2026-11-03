@@ -356,16 +356,17 @@ module Concierge
     #
     # +assume_model_exists+ is set because the question +to_llm+ would otherwise
     # ask has already been answered, better, by the record it is being asked
-    # about. +to_llm+ re-resolves +model_association.model_id+ through
-    # +Models.resolve+ (ruby_llm 1.16.0, chat_methods.rb:80-87), and with a
-    # provider named and nothing assumed that lands on +Models.find+ against the
+    # about. +to_llm+ re-resolves the pinned row's +model_id+ through
+    # +Models.resolve+ (ruby_llm 2.1.1, chat_methods.rb#build_llm_chat), and with
+    # a provider named and nothing assumed that lands on +Models.find+ against the
     # process-wide memoized registry. On a Rails host that registry is the
-    # +models+ table, holding only the models the host has already talked to — so
-    # the lookup raises +ModelNotFoundError+ for the very row it was handed, and
-    # for the row ChatResolver wrote moments earlier (the memo predates the
-    # insert). A model id that reached this point is one the host's own table
-    # names and that ChatResolver resolved against complete data; re-deriving it
-    # from a partial snapshot can only make the answer worse. See task 5018.
+    # +ruby_llm_models+ table, holding only the models the host has already
+    # talked to — so the lookup raises +ModelNotFoundError+ for the very row it
+    # was handed, and for the row ChatResolver wrote moments earlier (the memo
+    # predates the insert). A model id that reached this point is one the host's
+    # own table names and that ChatResolver resolved against complete data;
+    # re-deriving it from a partial snapshot can only make the answer worse. See
+    # task 5018.
     DEFAULT_CHAT_FACTORY = lambda do |model:, chat_record: nil|
       if chat_record.respond_to?(:to_llm)
         chat_record.assume_model_exists = true if chat_record.respond_to?(:assume_model_exists=)

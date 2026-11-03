@@ -10,11 +10,16 @@ module Concierge
     #
     #   Concierge::Test::FakeChat.script(reply: "Hello!")
     #   Concierge::Test::FakeChat.script(tool_calls: [{ name: "remember", arguments: { body: "x" } }])
-    #   Concierge::Test::FakeChat.raise_with(RubyLLM::Error.new(nil, "boom"))
+    #   Concierge::Test::FakeChat.raise_with(RubyLLM::Error.new("boom"))
     class FakeChat
-      Reply = Struct.new(:content, :tool_calls, :input_tokens, :output_tokens, keyword_init: true) do
+      # Shaped like a ruby_llm 2.x +RubyLLM::Message+: usage lives on +tokens+
+      # (a +RubyLLM::Tokens+), not on 1.x-style +input_tokens+/+output_tokens+
+      # readers — faking the old shape is how a silent nil-token regression in
+      # Run once went unnoticed.
+      Reply = Struct.new(:content, :tool_calls, :tokens, keyword_init: true) do
         def initialize(content: "", tool_calls: [], input_tokens: 0, output_tokens: 0)
-          super
+          super(content: content, tool_calls: tool_calls,
+                tokens: RubyLLM::Tokens.new(input: input_tokens, output: output_tokens))
         end
       end
 
@@ -54,15 +59,15 @@ module Concierge
 
       # --- Fluent builder surface (all chainable, most are recording no-ops) ---
 
-      def with_instructions(text, replace: false)
-        @instructions.clear if replace
+      def with_instructions(text, append: false)
+        @instructions.clear unless append
         @instructions << text.to_s
         self
       end
 
       def with_temperature(_value) = self
       def with_context(_context)   = self
-      def with_params(**)          = self
+      def with_provider_options(**) = self
 
       def with_tools(*tools)
         @tools.concat(tools.flatten)

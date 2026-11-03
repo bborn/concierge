@@ -177,7 +177,7 @@ module Concierge
     end
 
     test "a provider error still comes back as a failed Result, never raised" do
-      Concierge::Test::FakeChat.raise_with(RubyLLM::Error.new(nil, "boom"))
+      Concierge::Test::FakeChat.raise_with(RubyLLM::Error.new("boom"))
 
       result = nil
       assert_nothing_raised { result = Concierge::Run.proactive(@csm, instruction: "a") }

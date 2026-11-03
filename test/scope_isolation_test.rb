@@ -693,8 +693,8 @@ module Concierge
     # model registry at all: a host that names its provider assumes the model
     # exists. A host that leaves default_provider nil — documented and supported —
     # puts the whole resolution on the model lookup, and that lookup goes to
-    # whichever registry RubyLLM memoized: the host's own `models` table once
-    # acts_as_model has a row in it, holding only the models this host has already
+    # whichever registry RubyLLM memoized: the host's own `ruby_llm_models` table once
+    # acts_as_chat has a row in it, holding only the models this host has already
     # talked to. Every other model reads as unknown there, which used to switch the
     # offline degrade off entirely (task 5014) and now, with the resolution ours,
     # would fail the resolution instead — mid-grid, after the first cells had

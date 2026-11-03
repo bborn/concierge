@@ -19,27 +19,27 @@ require "rails/test_help"
 # Pin RubyLLM's model registry to the bundled JSON, once, before any test runs.
 #
 # RubyLLM memoizes one registry per process (Models.instance), and picks its
-# source the first time anything asks: the host's `models` table when that table
+# source the first time anything asks: the `ruby_llm_models` table when that table
 # has rows, the bundled JSON otherwise. Which one a given suite run gets
-# therefore depends on whether some earlier test happened to create a Model row
+# therefore depends on whether some earlier test happened to create a model row
 # first — and a DB-backed registry holds only the handful of models this suite
 # created, so `Models.find` starts raising for everything else.
 #
 # That was a live tripwire, not a hypothetical: it is what made the suite
 # order-dependent the moment a test drove the real acts_as_chat path (which
-# creates a Model row) before ProviderCredentialsTest asked about an OpenAI
+# creates a ruby_llm_models row) before ProviderCredentialsTest asked about an OpenAI
 # model. Deciding it here, deterministically, keeps every run asking the same
 # registry the same question.
 #
 # It is no longer what makes the *behaviour* correct, and must not be read as
 # such. Pinning the registry only ever hid the flake; ProviderCredentials read a
 # registry miss as "unknown model, assume credentials are fine" either way, which
-# is a production defect on any host on acts_as_model — see
+# is a production defect on any host whose registry is its own table — see
 # ProviderCredentials.provider_for. That is fixed, and the suite now passes with
 # this line removed; it stays because "every run asks the same registry" is still
 # worth having. Tests that need the host's real, partial registry ask for it, in
 # scope, via with_partial_model_registry.
-RubyLLM.models.load_from_json!
+RubyLLM.models.load_from_json
 
 require_relative "support/fake_chat"
 require_relative "support/offline_provider"

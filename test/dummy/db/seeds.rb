@@ -13,24 +13,21 @@
 
 require "securerandom"
 
-# ruby_llm's tool-call tables reference each other in a cycle:
-# `tool_calls.message_id -> messages` (the assistant turn that asked for the
-# call) and `messages.tool_call_id -> tool_calls` (the tool-result turn that
-# answers it). No ordering of `delete_all` can satisfy a cycle, so the link is
-# nulled first and the tables are then truncated child-before-parent.
+# ruby_llm 2.x keeps its own tables beside the host's: tool calls and usage rows
+# point at messages polymorphically (no foreign key, so nothing raises — they
+# would just be left dangling), and every chat belongs to a `ruby_llm_models`
+# row. Both only ever have rows once a *real* model has run a turn — the scripted
+# offline chat never writes them — so a reset after driving the demo with a live
+# key is exactly when they need clearing.
 #
-# Both only ever have rows once a *real* model has called a tool — the scripted
-# offline chat never does — so this broke `db:seed` only for someone who had just
-# driven the demo with a live key, which is the audience the seeds exist for.
-Message.update_all(tool_call_id: nil)
-
 # Order matters below: `delete_all` does not cascade, so a table goes before the
 # one it points at.
 [ Concierge::SlackCard, Concierge::Memory, Concierge::Routine, Concierge::ChannelDelivery,
   Concierge::Handoff, Concierge::OutreachPreference, Concierge::Conversation,
   Concierge::AgentProposal, Concierge::BudgetLedger, Concierge::AgentRuleRevision,
   Concierge::AgentRule, Concierge::AgentRun,
-  ToolCall, Message, Chat, Model, InboxMessage, ChangelogEntry, User, Tenant ].each(&:delete_all)
+  RubyLLM::ActiveRecord::ToolCall, RubyLLM::ActiveRecord::Usage, Message, Chat,
+  RubyLLM::ActiveRecord::Model, InboxMessage, ChangelogEntry, User, Tenant ].each(&:delete_all)
 
 # Acme's card is the one Bill writes about: real, on file, and expiring soon
 # enough that saying so is worth a message. Every seeded sentence about it reads
@@ -453,13 +450,19 @@ end
 # links to them (task 5017). It used to be that a keyless host could not create a
 # host Chat at all, so these stand-ins were the only conversation in the database.
 #
-# No `models` row is created here on purpose: RubyLLM switches its whole model
-# registry to the database the moment that table is non-empty, and a seed run
-# should not decide that for the process. The first real turn writes one, which is
-# fine — every registry lookup in the engine falls back to RubyLLM's bundled data
-# when the host's table cannot answer (Concierge::ModelRegistry).
+# ruby_llm 2.x requires every chat to belong to a `ruby_llm_models` row, so the
+# stand-in chat is pinned to the same row ChatResolver writes on a first real turn
+# (it finds this one by model_id + provider rather than adding another). The
+# demo's model, assumed to exist, needs no provider credentials. Once that table
+# is non-empty RubyLLM reads its registry from it, which is fine: every registry
+# lookup in the engine falls back to RubyLLM's bundled data when the host's table
+# cannot answer (Concierge::ModelRegistry).
+demo_model = RubyLLM::ActiveRecord::Model.from_llm(
+  RubyLLM::Model.default(Concierge.config.default_model, Concierge.config.default_provider.to_s)
+).tap(&:save!)
+
 demo_chat_id = Chat.insert_all(
-  [ { created_at: Time.current, updated_at: Time.current } ]
+  [ { ruby_llm_model_id: demo_model.id, created_at: Time.current, updated_at: Time.current } ]
 ).first["id"]
 
 [
@@ -480,7 +483,7 @@ demo_chat_id = Chat.insert_all(
   ).first["id"]
 
   message_id = Message.insert_all(
-    [ { chat_id: demo_chat_id, role: "assistant", input_tokens: 940, output_tokens: 130,
+    [ { chat_id: demo_chat_id, role: "assistant",
         content: "#{body}\n\n#{Concierge::Rules::CITATION_PREFIX} #{account_specific.id}",
         created_at: at, updated_at: at } ]
   ).first["id"]

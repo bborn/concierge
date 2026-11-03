@@ -8,7 +8,4 @@ RubyLLM.configure do |config|
   # exercises the same offline path a keyless host does — putting a fake key
   # here would have made this app the only one the documented path works in.
   config.anthropic_api_key = ENV.fetch("ANTHROPIC_API_KEY", nil)
-
-  # Use the association-based acts_as API (recommended)
-  config.use_new_acts_as = true
 end

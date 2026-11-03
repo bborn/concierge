@@ -51,7 +51,8 @@ module Concierge
 
       reply = chat.ask(@trigger[:message])
       success(reply)
-    rescue RubyLLM::Error, RubyLLM::ConfigurationError, RubyLLM::ModelNotFoundError => e
+    rescue RubyLLM::Error, RubyLLM::ConfigurationError, RubyLLM::ModelNotFoundError,
+           RubyLLM::PendingToolCallsError => e
       # Streaming may deliver partial tool-call args and errors mid-stream; the
       # harness absorbs both so a bad turn never crashes the host (design §6).
       #
@@ -63,6 +64,11 @@ module Concierge
       # latter deliberately, on line 45 above, for a model that is genuinely
       # unknown; "genuinely unknown" is a failed Result like any other, not an
       # exception the host has to have thought about (task 5018).
+      #
+      # PendingToolCallsError is new in ruby_llm 2.x and, like the others,
+      # StandardError-derived: +ask+ raises it when the persisted thread ends on
+      # an assistant tool call that never got its result (a turn that died
+      # mid-tool, say). That is a bad turn, not a crash.
       record_provenance(status: "failed", error_class: e.class.name)
       Result.failure(e, model: model)
     end
@@ -190,8 +196,8 @@ module Concierge
 
       record = record_provenance(
         status:           "ok",
-        input_tokens:     token(reply, :input_tokens),
-        output_tokens:    token(reply, :output_tokens),
+        input_tokens:     token(reply, :input),
+        output_tokens:    token(reply, :output),
         rule_ids_applied: cited.rule_ids,
         unknown_rule_ids: unknown,
         message_id:       persisted_reply_id,
@@ -201,8 +207,8 @@ module Concierge
       Result.new(
         reply_text:       selected.text,
         tool_calls:       reply.respond_to?(:tool_calls) ? reply.tool_calls : [],
-        input_tokens:     token(reply, :input_tokens),
-        output_tokens:    token(reply, :output_tokens),
+        input_tokens:     token(reply, :input),
+        output_tokens:    token(reply, :output),
         model:            model,
         rule_ids_applied: cited.rule_ids,
         unknown_rule_ids: unknown,
@@ -224,8 +230,14 @@ module Concierge
       )
     end
 
+    # ruby_llm 2.x reports usage as one +RubyLLM::Tokens+ value on
+    # +Message#tokens+; the 1.x +input_tokens+/+output_tokens+ readers are gone.
+    # Asking a 2.x message for +input_tokens+ does not raise — +respond_to?+ is
+    # simply false — so reading the old names records nil tokens on every run,
+    # and Budget#spend! charges nothing, silently. Read the 2.x shape.
     def token(reply, name)
-      reply.respond_to?(name) ? reply.public_send(name) : nil
+      tokens = reply.respond_to?(:tokens) ? reply.tokens : nil
+      tokens.respond_to?(name) ? tokens.public_send(name) : nil
     end
 
     # The host's own record of what the agent actually said on this turn — the

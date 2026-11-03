@@ -7,11 +7,11 @@ module Concierge
     class RoutineTool < Concierge::Capability::NativeTool
       description "Create, update, list, or remove a recurring routine for this account. " \
                   "Use when you or the customer want something to happen on a schedule."
-      param :action, desc: "create, update, destroy, or list."
-      param :schedule, desc: "Cron or natural language, e.g. '0 9 * * 1' or 'every monday at 9am'.", required: false
-      param :instruction, desc: "What the routine should do.", required: false
-      param :channel, desc: "Optional channel: in_app or email.", required: false
-      param :id, desc: "Routine id (for update/destroy).", required: false
+      parameter :action, description: "create, update, destroy, or list."
+      parameter :schedule, description: "Cron or natural language, e.g. '0 9 * * 1' or 'every monday at 9am'.", required: false
+      parameter :instruction, description: "What the routine should do.", required: false
+      parameter :channel, description: "Optional channel: in_app or email.", required: false
+      parameter :id, description: "Routine id (for update/destroy).", required: false
 
       def name
         "manage_routine"

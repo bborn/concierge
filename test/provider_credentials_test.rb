@@ -48,7 +48,7 @@ module Concierge
     #
     # The check answers through the model id, so what it can resolve decides what
     # it can refuse. RubyLLM memoizes one registry per process and prefers the
-    # host's `models` table the moment that table has a row (acts_as_model wires
+    # host's `ruby_llm_models` table the moment that table has a row (acts_as_chat wires
     # the source up at class-definition time). That table holds only the models
     # the host has actually talked to — so on a real Rails host Models.find
     # raises for nearly every model, which used to mean "unknown model, assume

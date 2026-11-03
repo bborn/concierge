@@ -4,12 +4,12 @@ module Concierge
   # The host's persistent conversation, driven the way an online turn actually
   # needs it: the customer's question written down alongside the agent's answer.
   #
-  # RubyLLM 1.16 splits chat persistence across *two* objects, and a caller that
+  # RubyLLM splits chat persistence across *two* objects, and a caller that
   # holds only one of them silently keeps half a transcript:
   #
-  #   * +ChatMethods#ask+, on the host's **AR chat record**, is what writes the
-  #     user row (+add_message(role: :user, ...)+ → +messages_association.create!+)
-  #     before delegating to the model.
+  #   * +ChatMethods#ask+ (via +ask_later+), on the host's **AR chat record**, is
+  #     what writes the user row (+add_message(role: :user, ...)+ →
+  #     +messages_association.create!+) before delegating to the model.
   #   * the +before_message+/+after_message+ callbacks installed by +to_llm+, on
   #     the **RubyLLM::Chat**, are what write the *assistant* row.
   #
@@ -24,7 +24,7 @@ module Concierge
   #
   # The obvious repair — hand +Run+ the AR record, which carries the same fluent
   # surface — is the wrong one. +ChatMethods#with_instructions+ *persists the
-  # system prompt as a message row*, and Concierge assembles that prompt fresh
+  # system prompt as a message row* by default, and Concierge assembles that prompt fresh
   # every run out of the account's memories, the rules in force and a live
   # snapshot. Doing that would (a) copy the account's memory into the host's
   # customer-facing message store on every single turn, which is a retention and
@@ -55,9 +55,19 @@ module Concierge
     # existed *before* this call, so persisting first and asking second leaves the
     # row order and the message order identical. Persisting after the ask would
     # file the question behind the answer.
+    #
+    # In ruby_llm 2.x the record's +add_message+ also appends the message to its
+    # memoized +to_llm+ chat — the very chat this wraps. So once the row is
+    # written the question is already in the thread, and asking the delegate
+    # again would send it twice; the turn is finished with +complete+ instead,
+    # which is exactly the second half of RubyLLM's own +ask+. Only when the row
+    # could not be written does the delegate +ask+ for itself.
     def ask(message = nil, with: nil, &)
+      __getobj__.raise_if_pending_tool_calls! if __getobj__.respond_to?(:raise_if_pending_tool_calls!)
       persisted = persist_customer_turn(message, with)
-      __getobj__.ask(message, with: with, &)
+      return __getobj__.ask(message, with: with, &) unless persisted && in_thread?
+
+      __getobj__.complete(&)
     rescue StandardError
       # The turn never happened, so the thread should look as it did before it.
       # Leaving the question behind would make the next turn re-ask it, and
@@ -85,7 +95,7 @@ module Concierge
     def persist_customer_turn(message, attachments)
       return unless @record.respond_to?(:add_message)
 
-      @record.add_message(role: :user, content: content_for(message, attachments))
+      @record.add_message(role: :user, content: message, attachments: attachments)
     rescue StandardError => e
       Concierge.logger&.warn(
         "[concierge] could not persist the customer's message: #{e.class}: #{e.message}"
@@ -93,10 +103,12 @@ module Concierge
       nil
     end
 
-    def content_for(message, attachments)
-      return message if attachments.blank?
-
-      RubyLLM::Content.new(message, attachments)
+    # True when the record's +add_message+ put the question into the chat this
+    # wraps — i.e. the record's memoized +to_llm+ *is* the delegate, which is how
+    # the default factory builds one of these. Any other pairing gets its
+    # question asked the ordinary way.
+    def in_thread?
+      @record.respond_to?(:to_llm) && @record.to_llm.equal?(__getobj__)
     end
 
     def destroy_quietly(record)

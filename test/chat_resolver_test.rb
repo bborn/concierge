@@ -101,8 +101,8 @@ module Concierge
       assert_equal 1, Conversation.for_subject(@subject).count
     end
 
-    # Regression: on a real Rails host (acts_as_model) RubyLLM prefers the host's
-    # `models` table the moment it has a row, and that table holds only the models
+    # Regression: on a real Rails host (acts_as_chat) RubyLLM prefers the host's
+    # `ruby_llm_models` table the moment it has a row, and that table holds only the models
     # the host has already talked to — so a lookup for anything else raises
     # ModelNotFoundError. That used to surface out of a before_save; now the
     # lookup is ours, so it is ours to get right, and a partial registry must fall

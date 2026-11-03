@@ -3,8 +3,8 @@ module Concierge
   # instantiating it — because instantiating it is precisely what blows up.
   #
   # RubyLLM::Provider#initialize calls ensure_configured!, and Models.resolve
-  # builds the provider before it honours +assume_exists+ (ruby_llm 1.16.0,
-  # models.rb:154-183). Both branches of resolve instantiate. So there is no way
+  # builds the provider whichever branch it takes (ruby_llm 2.1.1, models.rb,
+  # +Models.resolve+). Both branches of resolve instantiate. So there is no way
   # to talk RubyLLM into resolving a model on an uncredentialed provider — not
   # with assume_model_exists, and not by leaving the provider unset either.
   #
@@ -44,7 +44,7 @@ module Concierge
     # Asked of the *active* registry alone this answers nil far too often, and a
     # nil here means "Concierge has no opinion" — i.e. credentials are fine. So
     # the lookup goes through ModelRegistry, which falls back to RubyLLM's bundled
-    # data when the host's own `models` table has never heard of the model. See
+    # data when the host's own `ruby_llm_models` table has never heard of the model. See
     # the note there: reading "not in this host's table" as "no such model" is
     # what made this method answer credentials-are-fine for a host with no key.
     def provider_for(model)

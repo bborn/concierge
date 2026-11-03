@@ -159,9 +159,11 @@ module Concierge
     # operation — it opens with `delete_all` across every table, and that only
     # works if the teardown list is closed under foreign keys.
     #
-    # It was not. `tool_calls.message_id` references `messages` and `ToolCall` was
-    # absent from the list, so `Message.delete_all` raised
-    # `ActiveRecord::InvalidForeignKey`. Invisible until then because tool_calls
+    # It was not. Under ruby_llm 1.x `tool_calls.message_id` referenced
+    # `messages` and `ToolCall` was absent from the list, so `Message.delete_all`
+    # raised `ActiveRecord::InvalidForeignKey`. (2.x keeps tool calls in the
+    # polymorphic `ruby_llm_tool_calls`, but a reset that leaves them behind
+    # still leaves calls pointing at messages that no longer exist.) Invisible until then because tool_calls
     # rows exist only once a *real* model has called a tool — the offline scripted
     # chat never does — so the reset path broke precisely for whoever had just
     # driven the demo with a live key.
@@ -210,20 +212,21 @@ module Concierge
     RESEED_SCRIPT = <<~RUBY.freeze
       load Rails.root.join("db/seeds.rb").to_s
 
-      # What a real tool-using turn leaves behind, and the shape that matters:
-      # the two tables reference *each other*. The assistant turn owns the
-      # tool_call, and the tool-result turn points back at it. A fixture with only
-      # the first half exercises an ordering problem; only the pair exercises the
-      # cycle, which no ordering of delete_all can resolve.
+      # What a real tool-using turn leaves behind: the assistant turn owns the
+      # tool call, and the tool-result turn is the call's +result+. Both halves,
+      # so the reset is exercised against the full shape a live model writes.
       asked = Message.where(role: "assistant").last
       raise "no assistant message to attach a tool call to" unless asked
 
-      call = ToolCall.create!(message: asked, tool_call_id: "toolu_reseed_fixture",
-                              name: "recall", arguments: { "query" => "plan" })
-      Message.create!(chat: asked.chat, role: "tool", content: "[]",
-                      tool_call_id: call.id)
+      call = RubyLLM::ActiveRecord::ToolCall.create!(
+        message: asked, tool_call_id: "toolu_reseed_fixture",
+        name: "recall", arguments: { "query" => "plan" }
+      )
+      call.update!(result: Message.create!(chat: asked.chat, role: "tool", content: "[]"))
 
       load Rails.root.join("db/seeds.rb").to_s
+      raise "the reseed left tool calls behind" if RubyLLM::ActiveRecord::ToolCall.exists?
+
       print "RESEEDED_OK"
     RUBY
 

@@ -3,11 +3,12 @@ module Concierge
   # call, without a provider object, and without believing a partial answer.
   #
   # RubyLLM memoizes one registry per process (+Models.instance+) and picks its
-  # source the first time anything asks: the host's `models` table when that table
-  # has rows, the bundled JSON otherwise (models.rb#load_models). A Rails host on
-  # +acts_as_model+ — the recommended setup — normally has a `models` table holding
-  # only the handful of models it has actually talked to, so +Models.find+ raises
-  # +ModelNotFoundError+ for everything else in existence.
+  # source the first time anything asks: the configured +model_registry_store+
+  # when it has rows, the registry file, then the bundled JSON
+  # (models.rb#load_models). An +acts_as_chat+ host points that store at the
+  # `ruby_llm_models` table, which normally holds only the handful of models the
+  # host has actually talked to, so +Models.find+ raises +ModelNotFoundError+ for
+  # everything else in existence.
   #
   # "Not in this host's table" is not "no such model", and reading it as one has
   # already cost this codebase one production defect (task 5014): the credentials
@@ -18,7 +19,7 @@ module Concierge
   module ModelRegistry
     module_function
 
-    # The +Model::Info+ for a model id, or nil when neither registry knows it.
+    # The +RubyLLM::Model+ for a model id, or nil when neither registry knows it.
     # Never raises: a miss is an answer, and every caller here has something
     # better to do with one than blow up.
     def find(model, provider = nil)
@@ -31,19 +32,22 @@ module Concierge
     # not +RubyLLM.models+, so asking never disturbs the process-wide memoized
     # registry a host may have populated from its own table. Memoized against the
     # configured file so a host that repoints +model_registry_file+ is re-read.
+    # +load_from_json+ falls back to the gem's bundled JSON when that file is
+    # missing — which in ruby_llm 2.x is the usual case, since the default now
+    # points at a per-user cache path that only a refresh writes.
     def bundled
       file = RubyLLM.config.model_registry_file
       return @bundled if @bundled && @bundled_file == file
 
       @bundled_file = file
-      @bundled = RubyLLM::Models.new(RubyLLM::Models.read_from_json(file))
+      @bundled = RubyLLM::Models.new([]).load_from_json(file)
     end
 
     # A registry may raise for a miss (+ModelNotFoundError+) or, if the host has
     # pointed it at something broken, for any other reason. Either way this
     # question has no answer from *this* registry; the caller tries the next one.
     def lookup(registry, model, provider = nil)
-      provider ? registry.find(model, provider) : registry.find(model)
+      registry.find(model, provider: provider)
     rescue StandardError
       nil
     end
